@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { Modal, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { PressableScale } from "pressto";
 import { WebView } from "react-native-webview";
 import {
   CF_COOKIE_POLL_INTERVAL_MS,
@@ -152,22 +153,22 @@ export const CloudflareChallengeHost = () => {
           <View style={styles.headerRow}>
             <Text style={styles.headerTitle}>Cloudflare Verification</Text>
             <View style={styles.headerActions}>
-              <Pressable
+              <PressableScale
                 style={styles.headerButton}
                 onPress={() => {
                   manualDoneRef.current = true;
                 }}
               >
                 <Text style={styles.headerButtonText}>Done</Text>
-              </Pressable>
-              <Pressable
+              </PressableScale>
+              <PressableScale
                 style={styles.headerButton}
                 onPress={() => {
                   manualCancelRef.current = true;
                 }}
               >
                 <Text style={styles.headerButtonText}>Cancel</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           </View>
 
