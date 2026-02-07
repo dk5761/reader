@@ -1,0 +1,4 @@
+export const CF_MAX_RETRY_ATTEMPTS = 2;
+export const CF_AUTO_SOLVE_TIMEOUT_MS = 12000;
+export const CF_MANUAL_SOLVE_TIMEOUT_MS = 120000;
+export const CF_COOKIE_POLL_INTERVAL_MS = 1200;
