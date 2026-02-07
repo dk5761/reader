@@ -1,0 +1,8 @@
+{
+  "platforms": ["ios"],
+  "ios": {
+    "modules": ["CookieSyncModule"],
+    "podspecPath": "./CookieSync.podspec"
+  },
+  "name": "CookieSync"
+}
