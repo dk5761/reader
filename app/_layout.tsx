@@ -12,8 +12,10 @@ import { SessionProvider } from "@/shared/contexts/SessionContext";
 import { WebViewFetcherProvider } from "@/shared/contexts/WebViewFetcherContext";
 import { QueryProvider } from "@/services/query";
 import { CloudflareChallengeHost } from "@/services/network/cloudflare";
+import { initializeDatabase } from "@/services/db";
 
 Uniwind.setTheme("dark");
+initializeDatabase();
 
 export default function RootLayout() {
   return (

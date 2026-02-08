@@ -5,6 +5,11 @@ import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, ListRenderItemInfo, Text, View } from "react-native";
 import {
+  libraryEntryQueryOptions,
+  useRemoveLibraryEntryMutation,
+  useUpsertLibraryEntryMutation,
+} from "@/services/library";
+import {
   getSourceChapters,
   getSourceMangaDetails,
   sourceQueryFactory,
@@ -78,6 +83,16 @@ export default function MangaDetailsScreen() {
     enabled: Boolean(source && sourceId && mangaId),
   });
 
+  const libraryEntryQuery = useQuery(
+    libraryEntryQueryOptions(
+      sourceId || "unknown",
+      mangaId || "unknown",
+      Boolean(source && sourceId && mangaId)
+    )
+  );
+  const upsertLibraryMutation = useUpsertLibraryEntryMutation();
+  const removeLibraryMutation = useRemoveLibraryEntryMutation();
+
   const chaptersQuery = useQuery({
     queryKey: sourceQueryFactory.chapters(sourceId || "unknown", mangaId || "unknown"),
     queryFn: () => getSourceChapters(sourceId, mangaId),
@@ -147,6 +162,9 @@ export default function MangaDetailsScreen() {
   }
 
   const details = detailsQuery.data;
+  const isInLibrary = Boolean(libraryEntryQuery.data);
+  const isLibraryMutationPending =
+    upsertLibraryMutation.isPending || removeLibraryMutation.isPending;
 
   const renderChapterItem = ({ item }: ListRenderItemInfo<SourceChapter>) => (
     <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
@@ -191,6 +209,41 @@ export default function MangaDetailsScreen() {
               <View className="flex-1">
                 <Text className="text-xl font-bold text-white">{details.title}</Text>
                 <Text className="mt-1 text-xs text-[#9B9CA6]">{source.name}</Text>
+                <View className="mt-3 self-start">
+                  <ActionPillButton
+                    compact
+                    label={
+                      isLibraryMutationPending
+                        ? "Saving..."
+                        : isInLibrary
+                          ? "Remove from Library"
+                          : "Add to Library"
+                    }
+                    onPress={() => {
+                      if (isLibraryMutationPending) {
+                        return;
+                      }
+
+                      if (isInLibrary) {
+                        removeLibraryMutation.mutate({
+                          sourceId,
+                          mangaId,
+                        });
+                        return;
+                      }
+
+                      upsertLibraryMutation.mutate({
+                        sourceId,
+                        mangaId,
+                        mangaUrl: details.url,
+                        title: details.title,
+                        thumbnailUrl: details.thumbnailUrl,
+                        description: details.description,
+                        status: details.status,
+                      });
+                    }}
+                  />
+                </View>
                 {details.status ? (
                   <Text className="mt-2 text-xs text-[#C8C9D2]">
                     Status: {details.status}
