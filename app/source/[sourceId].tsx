@@ -47,12 +47,12 @@ const buildSupportedModes = (params: {
 }): BrowseMode[] => {
   const modes: BrowseMode[] = [];
 
-  if (params.supportsPopular) {
-    modes.push("popular");
-  }
-
   if (params.supportsLatest) {
     modes.push("latest");
+  }
+
+  if (params.supportsPopular) {
+    modes.push("popular");
   }
 
   if (params.supportsSearch) {
