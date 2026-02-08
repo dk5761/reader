@@ -22,7 +22,12 @@ export default function RootLayout() {
                   animationType="timing"
                   config={{ minScale: 0.97, activeOpacity: 0.85 }}
                 >
-                  <Stack />
+                  <Stack>
+                    <Stack.Screen
+                      name="(tabs)"
+                      options={{ headerShown: false }}
+                    />
+                  </Stack>
                   <CloudflareChallengeHost />
                 </PressablesConfig>
               </HeroUINativeProvider>
