@@ -445,6 +445,10 @@ export const asuraScansAdapter: SourceAdapter = {
     name: "Asura Scans",
     language: "en",
     baseUrl: ASURA_BASE_URL,
+    supportsSearch: true,
+    supportsPopular: true,
+    supportsLatest: true,
+    supportsFilters: false,
   },
 
   async search(params, context) {

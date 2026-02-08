@@ -7,6 +7,10 @@ export interface SourceDescriptor {
   baseUrl: string;
   iconUrl?: string;
   isNsfw?: boolean;
+  supportsSearch?: boolean;
+  supportsPopular?: boolean;
+  supportsLatest?: boolean;
+  supportsFilters?: boolean;
 }
 
 export interface SourceManga {
