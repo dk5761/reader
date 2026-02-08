@@ -22,6 +22,8 @@ export default function TabsLayout() {
               ? "library-outline"
               : route.name === "browse"
                 ? "compass-outline"
+                : route.name === "history"
+                  ? "time-outline"
                 : route.name === "settings"
                   ? "settings-outline"
                   : "ellipse-outline";
@@ -40,6 +42,12 @@ export default function TabsLayout() {
         name="browse"
         options={{
           title: "Browse",
+        }}
+      />
+      <Tabs.Screen
+        name="history"
+        options={{
+          title: "History",
         }}
       />
       <Tabs.Screen

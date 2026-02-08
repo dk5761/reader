@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { AppState } from "react-native";
+import { historyQueryFactory } from "@/features/history/api";
 import { upsertReadingHistoryEntry } from "@/services/history";
-import { historyQueryFactory } from "@/services/history/history.queryFactory";
 import { upsertReadingProgress } from "@/services/progress";
 import { progressQueryFactory } from "@/services/progress/progress.queryFactory";
 import type { ReaderCurrentProgressPayload } from "../types/reader.types";
