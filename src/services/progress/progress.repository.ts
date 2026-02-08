@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { getDatabase, readingProgress } from "@/services/db";
+import { getDatabase, getSQLiteDatabase, readingProgress } from "@/services/db";
 import type {
   MangaLatestProgress,
   ReadingProgressEntry,
@@ -53,6 +53,49 @@ export const upsertReadingProgress = (input: UpsertReadingProgressInput): void =
       },
     })
     .run();
+};
+
+export const upsertReadingProgressMany = (inputs: UpsertReadingProgressInput[]): void => {
+  if (inputs.length === 0) {
+    return;
+  }
+
+  const db = getDatabase();
+  const sqliteDatabase = getSQLiteDatabase();
+  const now = Date.now();
+
+  sqliteDatabase.withTransactionSync(() => {
+    inputs.forEach((input) => {
+      db.insert(readingProgress)
+        .values({
+          sourceId: input.sourceId,
+          mangaId: input.mangaId,
+          chapterId: input.chapterId,
+          chapterTitle: input.chapterTitle,
+          chapterNumber: input.chapterNumber,
+          pageIndex: input.pageIndex,
+          totalPages: input.totalPages,
+          isCompleted: input.isCompleted ?? false,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            readingProgress.sourceId,
+            readingProgress.mangaId,
+            readingProgress.chapterId,
+          ],
+          set: {
+            chapterTitle: input.chapterTitle,
+            chapterNumber: input.chapterNumber,
+            pageIndex: input.pageIndex,
+            totalPages: input.totalPages,
+            isCompleted: input.isCompleted ?? false,
+            updatedAt: now,
+          },
+        })
+        .run();
+    });
+  });
 };
 
 export const getMangaReadingProgress = (
@@ -145,4 +188,32 @@ export const clearChapterReadingProgress = (
       )
     )
     .run();
+};
+
+export const clearChapterReadingProgressMany = (input: {
+  sourceId: string;
+  mangaId: string;
+  chapterIds: string[];
+}): void => {
+  const chapterIds = [...new Set(input.chapterIds)];
+  if (chapterIds.length === 0) {
+    return;
+  }
+
+  const db = getDatabase();
+  const sqliteDatabase = getSQLiteDatabase();
+
+  sqliteDatabase.withTransactionSync(() => {
+    chapterIds.forEach((chapterId) => {
+      db.delete(readingProgress)
+        .where(
+          and(
+            eq(readingProgress.sourceId, input.sourceId),
+            eq(readingProgress.mangaId, input.mangaId),
+            eq(readingProgress.chapterId, chapterId)
+          )
+        )
+        .run();
+    });
+  });
 };

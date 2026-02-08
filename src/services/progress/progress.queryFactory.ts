@@ -6,6 +6,9 @@ export const progressQueryFactory = {
   latestByManga: (sourceId: string, mangaId: string) =>
     [...progressQueryFactory.all(), "manga-latest", sourceId, mangaId] as const,
 
+  byManga: (sourceId: string, mangaId: string) =>
+    [...progressQueryFactory.all(), "manga", sourceId, mangaId] as const,
+
   byChapter: (sourceId: string, mangaId: string, chapterId: string) =>
     [...progressQueryFactory.all(), "chapter", sourceId, mangaId, chapterId] as const,
 };

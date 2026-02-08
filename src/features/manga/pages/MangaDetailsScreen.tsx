@@ -1,15 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, ListRenderItemInfo, Text, View } from "react-native";
+import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import {
   libraryEntryQueryOptions,
   useRemoveLibraryEntryMutation,
   useUpsertLibraryEntryMutation,
 } from "@/services/library";
-import { latestMangaProgressQueryOptions } from "@/services/progress";
+import {
+  latestMangaProgressQueryOptions,
+  mangaReadingProgressQueryOptions,
+  useSetBelowChaptersReadStateMutation,
+  useSetChapterReadStateMutation,
+} from "@/services/progress";
 import {
   getSourceChapters,
   getSourceMangaDetails,
@@ -25,6 +32,14 @@ import {
 } from "@/shared/ui";
 
 const CHAPTERS_PAGE_SIZE = 50;
+const SWIPE_ACTION_WIDTH = 224;
+const SWIPE_ACTION_COLUMN_WIDTH = 108;
+
+interface PendingBelowRule {
+  anchorIndex: number;
+  targetReadState: boolean;
+  opId: number;
+}
 
 const getDecodedParam = (value: string | string[] | undefined): string => {
   const paramValue = Array.isArray(value) ? value[0] : value;
@@ -55,6 +70,7 @@ const formatChapterMeta = (chapter: SourceChapter): string => {
 
 export default function MangaDetailsScreen() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{ sourceId?: string | string[]; mangaId?: string | string[] }>();
   const sourceId = getDecodedParam(params.sourceId);
   const mangaId = getDecodedParam(params.mangaId);
@@ -80,7 +96,7 @@ export default function MangaDetailsScreen() {
 
   const detailsQuery = useQuery({
     queryKey: sourceQueryFactory.manga(sourceId || "unknown", mangaId || "unknown"),
-    queryFn: () => getSourceMangaDetails(sourceId, mangaId),
+    queryFn: ({ signal }) => getSourceMangaDetails(sourceId, mangaId, signal),
     enabled: Boolean(source && sourceId && mangaId),
   });
 
@@ -96,7 +112,7 @@ export default function MangaDetailsScreen() {
 
   const chaptersQuery = useQuery({
     queryKey: sourceQueryFactory.chapters(sourceId || "unknown", mangaId || "unknown"),
-    queryFn: () => getSourceChapters(sourceId, mangaId),
+    queryFn: ({ signal }) => getSourceChapters(sourceId, mangaId, signal),
     enabled: Boolean(source && sourceId && mangaId),
   });
   const latestProgressQuery = useQuery(
@@ -106,6 +122,16 @@ export default function MangaDetailsScreen() {
       Boolean(source && sourceId && mangaId)
     )
   );
+  const mangaProgressQuery = useQuery(
+    mangaReadingProgressQueryOptions(
+      sourceId || "unknown",
+      mangaId || "unknown",
+      Boolean(source && sourceId && mangaId)
+    )
+  );
+  const setChapterReadStateMutation = useSetChapterReadStateMutation();
+  const setBelowChaptersReadStateMutation = useSetBelowChaptersReadStateMutation();
+  const [pendingBelowRule, setPendingBelowRule] = useState<PendingBelowRule | null>(null);
 
   const allChapters = useMemo(() => {
     const chapters = chaptersQuery.data ?? [];
@@ -126,6 +152,57 @@ export default function MangaDetailsScreen() {
     [allChapters, chaptersPage]
   );
   const hasMoreChapters = visibleChapters.length < allChapters.length;
+  const progressByChapterId = useMemo(
+    () => new Map((mangaProgressQuery.data ?? []).map((entry) => [entry.chapterId, entry])),
+    [mangaProgressQuery.data]
+  );
+  const effectiveReadByChapterId = useMemo(() => {
+    const map = new Map<string, boolean>();
+    allChapters.forEach((chapter, index) => {
+      const baseReadState = Boolean(progressByChapterId.get(chapter.id)?.isCompleted);
+      if (!pendingBelowRule) {
+        map.set(chapter.id, baseReadState);
+        return;
+      }
+
+      const isBelowPendingAnchor = index > pendingBelowRule.anchorIndex;
+      map.set(chapter.id, isBelowPendingAnchor ? pendingBelowRule.targetReadState : baseReadState);
+    });
+    return map;
+  }, [allChapters, pendingBelowRule, progressByChapterId]);
+  const areAllBelowReadByIndex = useMemo(() => {
+    if (allChapters.length === 0) {
+      return [] as boolean[];
+    }
+
+    const result = new Array<boolean>(allChapters.length).fill(true);
+    for (let index = allChapters.length - 2; index >= 0; index -= 1) {
+      const nextChapterId = allChapters[index + 1]?.id;
+      const nextIsRead = nextChapterId
+        ? Boolean(effectiveReadByChapterId.get(nextChapterId))
+        : true;
+      result[index] = result[index + 1] && nextIsRead;
+    }
+    return result;
+  }, [allChapters, effectiveReadByChapterId]);
+  const isReadStateMutationPending =
+    setChapterReadStateMutation.isPending || setBelowChaptersReadStateMutation.isPending;
+
+  useEffect(() => {
+    setPendingBelowRule(null);
+  }, [mangaId, sourceId]);
+
+  const handleBackDuringLoading = () => {
+    const mangaQueryKey = sourceQueryFactory.manga(sourceId || "unknown", mangaId || "unknown");
+    const chaptersQueryKey = sourceQueryFactory.chapters(
+      sourceId || "unknown",
+      mangaId || "unknown"
+    );
+
+    void queryClient.cancelQueries({ queryKey: mangaQueryKey });
+    void queryClient.cancelQueries({ queryKey: chaptersQueryKey });
+    router.back();
+  };
 
   if (!source || !sourceId || !mangaId) {
     return (
@@ -143,10 +220,13 @@ export default function MangaDetailsScreen() {
 
   if (detailsQuery.isPending || chaptersQuery.isPending) {
     return (
-      <>
+      <View className="flex-1 bg-[#111214]">
         <Stack.Screen options={{ headerShown: false }} />
-        <CenteredLoadingState message="Loading manga details..." />
-      </>
+        <View className="px-4 pb-2 pt-2">
+          <BackButton onPress={handleBackDuringLoading} />
+        </View>
+        <CenteredLoadingState withBackground={false} message="Loading manga details..." />
+      </View>
     );
   }
 
@@ -175,31 +255,197 @@ export default function MangaDetailsScreen() {
   const isLibraryMutationPending =
     upsertLibraryMutation.isPending || removeLibraryMutation.isPending;
 
-  const renderChapterItem = ({ item }: ListRenderItemInfo<SourceChapter>) => (
-    <PressableScale
-      onPress={() => {
-        const shouldResumeCurrentChapter = latestProgress?.chapterId === item.id;
-        router.push({
-          pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
-          params: {
-            sourceId,
-            mangaId,
-            chapterId: item.id,
-            initialPage: shouldResumeCurrentChapter
-              ? String(latestProgress.pageIndex)
-              : "0",
+  const renderChapterItem = ({ item, index }: ListRenderItemInfo<SourceChapter>) => {
+    const isChapterRead = Boolean(effectiveReadByChapterId.get(item.id));
+    const hasBelowChapters = index < allChapters.length - 1;
+    const allBelowRead = hasBelowChapters ? Boolean(areAllBelowReadByIndex[index]) : false;
+    const shouldMarkBelowAsRead = hasBelowChapters ? !allBelowRead : false;
+    const belowChapterInputs = hasBelowChapters
+      ? allChapters
+          .slice(index + 1)
+          .filter((chapter, chapterIndex, chapterArray) => {
+            return (
+              chapterArray.findIndex((candidate) => candidate.id === chapter.id) ===
+              chapterIndex
+            );
+          })
+          .map((chapter) => ({
+            chapterId: chapter.id,
+            chapterTitle: chapter.title,
+            chapterNumber: chapter.number,
+          }))
+      : [];
+
+    const handleSingleChapterToggle = (swipeableMethods: SwipeableMethods) => {
+      if (isReadStateMutationPending) {
+        return;
+      }
+
+      swipeableMethods.close();
+      setChapterReadStateMutation.mutate({
+        sourceId,
+        mangaId,
+        chapterId: item.id,
+        chapterTitle: item.title,
+        chapterNumber: item.number,
+        markAsRead: !isChapterRead,
+      });
+    };
+
+    const handleBelowToggle = (swipeableMethods: SwipeableMethods) => {
+      if (isReadStateMutationPending || belowChapterInputs.length === 0) {
+        return;
+      }
+
+      const opId = Date.now();
+      const targetReadState = shouldMarkBelowAsRead;
+      setPendingBelowRule({
+        anchorIndex: index,
+        targetReadState,
+        opId,
+      });
+      swipeableMethods.close();
+
+      setBelowChaptersReadStateMutation.mutate(
+        {
+          sourceId,
+          mangaId,
+          chapters: belowChapterInputs,
+          markAsRead: targetReadState,
+        },
+        {
+          onError: () => {
+            setPendingBelowRule((currentRule) => {
+              if (!currentRule || currentRule.opId !== opId) {
+                return currentRule;
+              }
+              return null;
+            });
           },
-        });
-      }}
-    >
-      <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
-        <Text className="text-sm font-medium text-white">{item.title}</Text>
-        {formatChapterMeta(item) ? (
-          <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
-        ) : null}
-      </View>
-    </PressableScale>
-  );
+          onSettled: () => {
+            setPendingBelowRule((currentRule) => {
+              if (!currentRule || currentRule.opId !== opId) {
+                return currentRule;
+              }
+              return null;
+            });
+          },
+        }
+      );
+    };
+
+    return (
+      <Swipeable
+        enabled={!isReadStateMutationPending}
+        friction={1.6}
+        rightThreshold={40}
+        overshootRight={false}
+        containerStyle={{ borderRadius: 12 }}
+        renderRightActions={(_progress, _translation, swipeableMethods) => (
+          <View
+            style={{ width: SWIPE_ACTION_WIDTH }}
+            className="ml-2 h-full flex-row items-stretch gap-2"
+          >
+            <PressableScale
+              onPress={() => {
+                handleSingleChapterToggle(swipeableMethods);
+              }}
+            >
+              <View
+                style={{ width: SWIPE_ACTION_COLUMN_WIDTH }}
+                className={`rounded-xl px-3 py-3 ${
+                  isChapterRead ? "bg-[#3B2024]" : "bg-[#1F3A2A]"
+                } h-full items-center justify-center`}
+              >
+                <Ionicons
+                  name={isChapterRead ? "eye-off-outline" : "eye-outline"}
+                  size={18}
+                  color="#FFFFFF"
+                />
+                <Text className="mt-1 text-center text-xs font-semibold text-white">
+                  {isChapterRead ? "Mark Unread" : "Mark Read"}
+                </Text>
+              </View>
+            </PressableScale>
+
+            {hasBelowChapters ? (
+              <PressableScale
+                onPress={() => {
+                  handleBelowToggle(swipeableMethods);
+                }}
+              >
+                <View
+                  style={{ width: SWIPE_ACTION_COLUMN_WIDTH }}
+                  className="h-full items-center justify-center rounded-xl bg-[#2A2D36] px-3 py-3"
+                >
+                  <Ionicons name="arrow-down-circle-outline" size={18} color="#FFFFFF" />
+                  <Text className="mt-1 text-center text-xs font-semibold text-white">
+                    {shouldMarkBelowAsRead
+                      ? "Mark Below as Read"
+                      : "Mark Below as Unread"}
+                  </Text>
+                </View>
+              </PressableScale>
+            ) : (
+              <View
+                style={{ width: SWIPE_ACTION_COLUMN_WIDTH }}
+                className="h-full items-center justify-center rounded-xl bg-[#1A1B1E]"
+              >
+                <Ionicons name="remove-circle-outline" size={18} color="#7E808A" />
+                <Text className="mt-1 text-center text-xs font-semibold text-[#7E808A]">
+                  No Below
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      >
+        <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
+          <PressableScale
+            onPress={() => {
+              const shouldResumeCurrentChapter = latestProgress?.chapterId === item.id;
+              router.push({
+                pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
+                params: {
+                  sourceId,
+                  mangaId,
+                  chapterId: item.id,
+                  initialPage: shouldResumeCurrentChapter
+                    ? String(latestProgress.pageIndex)
+                    : "0",
+                },
+              });
+            }}
+          >
+            <View>
+              <View className="flex-row items-start justify-between gap-2">
+                <Text className="flex-1 text-sm font-medium text-white">{item.title}</Text>
+                <View
+                  className={`rounded-full px-2 py-0.5 ${
+                    isChapterRead
+                      ? "border border-[#27553A] bg-[#173224]"
+                      : "border border-[#2A2A2E] bg-[#141519]"
+                  }`}
+                >
+                  <Text
+                    className={`text-[10px] font-semibold ${
+                      isChapterRead ? "text-[#7BEEB0]" : "text-[#9B9CA6]"
+                    }`}
+                  >
+                    {isChapterRead ? "Read" : "Unread"}
+                  </Text>
+                </View>
+              </View>
+
+              {formatChapterMeta(item) ? (
+                <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
+              ) : null}
+            </View>
+          </PressableScale>
+        </View>
+      </Swipeable>
+    );
+  };
 
   return (
     <View className="flex-1 bg-[#111214]">

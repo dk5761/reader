@@ -67,6 +67,7 @@ const requestSource = async <T>(
     data: options.data,
     timeout: options.timeoutMs,
     responseType: resolveResponseType(options.responseType),
+    signal: options.signal,
   };
 
   try {

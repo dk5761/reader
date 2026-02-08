@@ -68,6 +68,7 @@ export interface SourceRequestOptions {
   data?: unknown;
   responseType?: "json" | "text" | "arraybuffer";
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface SourceResponse<T> {

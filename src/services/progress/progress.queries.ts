@@ -2,6 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import { progressQueryFactory } from "./progress.queryFactory";
 import {
   getChapterProgress,
+  getMangaReadingProgress,
   getLatestMangaProgress,
   getLatestReadingProgress,
 } from "./progress.repository";
@@ -21,6 +22,17 @@ export const chapterProgressQueryOptions = (
   queryOptions({
     queryKey: progressQueryFactory.byChapter(sourceId, mangaId, chapterId),
     queryFn: () => getChapterProgress(sourceId, mangaId, chapterId),
+    enabled,
+  });
+
+export const mangaReadingProgressQueryOptions = (
+  sourceId: string,
+  mangaId: string,
+  enabled: boolean
+) =>
+  queryOptions({
+    queryKey: progressQueryFactory.byManga(sourceId, mangaId),
+    queryFn: () => getMangaReadingProgress(sourceId, mangaId),
     enabled,
   });
 

@@ -15,7 +15,7 @@ export const readerMangaDetailsQueryOptions = (
 ) =>
   queryOptions({
     queryKey: [...readerQueryFactory.all(), "manga", sourceId, mangaId] as const,
-    queryFn: () => getSourceMangaDetails(sourceId, mangaId),
+    queryFn: ({ signal }) => getSourceMangaDetails(sourceId, mangaId, signal),
     enabled,
   });
 
@@ -26,7 +26,7 @@ export const readerChaptersQueryOptions = (
 ) =>
   queryOptions({
     queryKey: [...readerQueryFactory.all(), "chapters", sourceId, mangaId] as const,
-    queryFn: () => getSourceChapters(sourceId, mangaId),
+    queryFn: ({ signal }) => getSourceChapters(sourceId, mangaId, signal),
     enabled,
   });
 
@@ -37,7 +37,7 @@ export const readerChapterPagesQueryOptions = (
 ) =>
   queryOptions({
     queryKey: readerQueryFactory.chapterPages(sourceId, chapterId),
-    queryFn: () => getSourceChapterPages(sourceId, chapterId),
+    queryFn: ({ signal }) => getSourceChapterPages(sourceId, chapterId, signal),
     enabled,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,

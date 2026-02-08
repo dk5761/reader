@@ -15,16 +15,41 @@ import type {
 } from "./types";
 import { sourceRequestClient } from "../http/request";
 
-const createSourceContext = (): SourceAdapterContext => ({
-  http: sourceRequestClient,
-});
+const createSourceContext = (signal?: AbortSignal): SourceAdapterContext => {
+  if (!signal) {
+    return {
+      http: sourceRequestClient,
+    };
+  }
+
+  return {
+    http: {
+      request: (options) =>
+        sourceRequestClient.request({
+          ...options,
+          signal: options.signal ?? signal,
+        }),
+      get: (url, options) =>
+        sourceRequestClient.get(url, {
+          ...options,
+          signal: options?.signal ?? signal,
+        }),
+      post: (url, data, options) =>
+        sourceRequestClient.post(url, data, {
+          ...options,
+          signal: options?.signal ?? signal,
+        }),
+    },
+  };
+};
 
 const runWithAdapter = async <T>(
   sourceId: SourceId,
-  operation: (adapter: SourceAdapter, context: SourceAdapterContext) => Promise<T>
+  operation: (adapter: SourceAdapter, context: SourceAdapterContext) => Promise<T>,
+  signal?: AbortSignal
 ): Promise<T> => {
   const source = sourceRegistry.require(sourceId);
-  return operation(source, createSourceContext());
+  return operation(source, createSourceContext(signal));
 };
 
 export const listRegisteredSources = (): SourceDescriptor[] => sourceRegistry.list();
@@ -34,52 +59,74 @@ export const getSourceDescriptor = (sourceId: SourceId): SourceDescriptor =>
 
 export const searchSourceManga = (
   sourceId: SourceId,
-  params: SourceSearchParams
+  params: SourceSearchParams,
+  signal?: AbortSignal
 ): Promise<SourcePagedResult<SourceManga>> =>
-  runWithAdapter(sourceId, (source, context) => source.search(params, context));
+  runWithAdapter(sourceId, (source, context) => source.search(params, context), signal);
 
 export const getSourceMangaDetails = (
   sourceId: SourceId,
-  mangaId: string
+  mangaId: string,
+  signal?: AbortSignal
 ): Promise<SourceMangaDetails> =>
-  runWithAdapter(sourceId, (source, context) =>
-    source.getMangaDetails(mangaId, context)
+  runWithAdapter(
+    sourceId,
+    (source, context) => source.getMangaDetails(mangaId, context),
+    signal
   );
 
 export const getSourceChapters = (
   sourceId: SourceId,
-  mangaId: string
+  mangaId: string,
+  signal?: AbortSignal
 ): Promise<SourceChapter[]> =>
-  runWithAdapter(sourceId, (source, context) => source.getChapters(mangaId, context));
+  runWithAdapter(
+    sourceId,
+    (source, context) => source.getChapters(mangaId, context),
+    signal
+  );
 
 export const getSourceChapterPages = (
   sourceId: SourceId,
-  chapterId: string
+  chapterId: string,
+  signal?: AbortSignal
 ): Promise<SourcePage[]> =>
-  runWithAdapter(sourceId, (source, context) =>
-    source.getChapterPages(chapterId, context)
+  runWithAdapter(
+    sourceId,
+    (source, context) => source.getChapterPages(chapterId, context),
+    signal
   );
 
 export const getSourceLatestUpdates = async (
   sourceId: SourceId,
-  params: SourceListParams = {}
+  params: SourceListParams = {},
+  signal?: AbortSignal
 ): Promise<SourcePagedResult<SourceManga>> =>
-  runWithAdapter(sourceId, async (source, context) => {
-    if (!source.getLatestUpdates) {
-      throw new SourceCapabilityError(sourceId, "getLatestUpdates");
-    }
+  runWithAdapter(
+    sourceId,
+    async (source, context) => {
+      if (!source.getLatestUpdates) {
+        throw new SourceCapabilityError(sourceId, "getLatestUpdates");
+      }
 
-    return source.getLatestUpdates(params, context);
-  });
+      return source.getLatestUpdates(params, context);
+    },
+    signal
+  );
 
 export const getSourcePopularTitles = async (
   sourceId: SourceId,
-  params: SourceListParams = {}
+  params: SourceListParams = {},
+  signal?: AbortSignal
 ): Promise<SourcePagedResult<SourceManga>> =>
-  runWithAdapter(sourceId, async (source, context) => {
-    if (!source.getPopularTitles) {
-      throw new SourceCapabilityError(sourceId, "getPopularTitles");
-    }
+  runWithAdapter(
+    sourceId,
+    async (source, context) => {
+      if (!source.getPopularTitles) {
+        throw new SourceCapabilityError(sourceId, "getPopularTitles");
+      }
 
-    return source.getPopularTitles(params, context);
-  });
+      return source.getPopularTitles(params, context);
+    },
+    signal
+  );
