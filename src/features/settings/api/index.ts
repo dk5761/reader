@@ -4,3 +4,6 @@ export * from "./settings.queryFactory";
 export * from "./libraryUpdate.mutations";
 export * from "./libraryUpdate.queries";
 export * from "./libraryUpdate.queryFactory";
+export * from "./appUpdate.mutations";
+export * from "./appUpdate.queries";
+export * from "./appUpdate.queryFactory";

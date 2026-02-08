@@ -4,9 +4,11 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { HeroUINativeProvider } from "heroui-native";
 import { PressablesConfig } from "pressto";
+import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Uniwind } from "uniwind";
+import { startAppUpdateForegroundListener } from "@/services/app-update";
 import { SourceProvider } from "@/services/source";
 import { SessionProvider } from "@/shared/contexts/SessionContext";
 import { WebViewFetcherProvider } from "@/shared/contexts/WebViewFetcherContext";
@@ -18,6 +20,13 @@ Uniwind.setTheme("dark");
 initializeDatabase();
 
 export default function RootLayout() {
+  useEffect(() => {
+    const stopListening = startAppUpdateForegroundListener();
+    return () => {
+      stopListening();
+    };
+  }, []);
+
   return (
     <SafeAreaProvider>
       <QueryProvider>

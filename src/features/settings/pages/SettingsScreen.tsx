@@ -14,6 +14,7 @@ import {
   appSettingsQueryOptions,
   useUpdateAppSettingsMutation,
 } from "../api";
+import { AppUpdateCard } from "../components/AppUpdateCard";
 import { LibraryUpdateCard } from "../components/LibraryUpdateCard";
 
 export default function SettingsScreen() {
@@ -124,6 +125,8 @@ export default function SettingsScreen() {
         </View>
 
         <LibraryUpdateCard />
+
+        <AppUpdateCard />
 
         {updateSettingsMutation.isError ? (
           <View className="mt-3 rounded-xl border border-[#3A2A2A] bg-[#271A1A] p-3">
