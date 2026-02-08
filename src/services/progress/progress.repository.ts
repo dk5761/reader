@@ -1,6 +1,7 @@
 import { and, desc, eq } from "drizzle-orm";
 import { getDatabase, readingProgress } from "@/services/db";
 import type {
+  MangaLatestProgress,
   ReadingProgressEntry,
   UpsertReadingProgressInput,
 } from "./progress.types";
@@ -81,6 +82,52 @@ export const getLatestReadingProgress = (limit = 20): ReadingProgressEntry[] => 
     .all();
 
   return entries.map(mapProgressEntry);
+};
+
+export const getChapterProgress = (
+  sourceId: string,
+  mangaId: string,
+  chapterId: string
+): ReadingProgressEntry | null => {
+  const db = getDatabase();
+  const entry = db
+    .select()
+    .from(readingProgress)
+    .where(
+      and(
+        eq(readingProgress.sourceId, sourceId),
+        eq(readingProgress.mangaId, mangaId),
+        eq(readingProgress.chapterId, chapterId)
+      )
+    )
+    .limit(1)
+    .get();
+
+  return entry ? mapProgressEntry(entry) : null;
+};
+
+export const getLatestMangaProgress = (
+  sourceId: string,
+  mangaId: string
+): MangaLatestProgress | null => {
+  const db = getDatabase();
+  const entry = db
+    .select({
+      sourceId: readingProgress.sourceId,
+      mangaId: readingProgress.mangaId,
+      chapterId: readingProgress.chapterId,
+      pageIndex: readingProgress.pageIndex,
+      updatedAt: readingProgress.updatedAt,
+    })
+    .from(readingProgress)
+    .where(
+      and(eq(readingProgress.sourceId, sourceId), eq(readingProgress.mangaId, mangaId))
+    )
+    .orderBy(desc(readingProgress.updatedAt))
+    .limit(1)
+    .get();
+
+  return entry ?? null;
 };
 
 export const clearChapterReadingProgress = (

@@ -9,6 +9,7 @@ import {
   useRemoveLibraryEntryMutation,
   useUpsertLibraryEntryMutation,
 } from "@/services/library";
+import { latestMangaProgressQueryOptions } from "@/services/progress";
 import {
   getSourceChapters,
   getSourceMangaDetails,
@@ -98,6 +99,13 @@ export default function MangaDetailsScreen() {
     queryFn: () => getSourceChapters(sourceId, mangaId),
     enabled: Boolean(source && sourceId && mangaId),
   });
+  const latestProgressQuery = useQuery(
+    latestMangaProgressQueryOptions(
+      sourceId || "unknown",
+      mangaId || "unknown",
+      Boolean(source && sourceId && mangaId)
+    )
+  );
 
   const allChapters = useMemo(() => {
     const chapters = chaptersQuery.data ?? [];
@@ -163,16 +171,34 @@ export default function MangaDetailsScreen() {
 
   const details = detailsQuery.data;
   const isInLibrary = Boolean(libraryEntryQuery.data);
+  const latestProgress = latestProgressQuery.data;
   const isLibraryMutationPending =
     upsertLibraryMutation.isPending || removeLibraryMutation.isPending;
 
   const renderChapterItem = ({ item }: ListRenderItemInfo<SourceChapter>) => (
-    <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
-      <Text className="text-sm font-medium text-white">{item.title}</Text>
-      {formatChapterMeta(item) ? (
-        <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
-      ) : null}
-    </View>
+    <PressableScale
+      onPress={() => {
+        const shouldResumeCurrentChapter = latestProgress?.chapterId === item.id;
+        router.push({
+          pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
+          params: {
+            sourceId,
+            mangaId,
+            chapterId: item.id,
+            initialPage: shouldResumeCurrentChapter
+              ? String(latestProgress.pageIndex)
+              : "0",
+          },
+        });
+      }}
+    >
+      <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
+        <Text className="text-sm font-medium text-white">{item.title}</Text>
+        {formatChapterMeta(item) ? (
+          <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
+        ) : null}
+      </View>
+    </PressableScale>
   );
 
   return (
@@ -210,39 +236,59 @@ export default function MangaDetailsScreen() {
                 <Text className="text-xl font-bold text-white">{details.title}</Text>
                 <Text className="mt-1 text-xs text-[#9B9CA6]">{source.name}</Text>
                 <View className="mt-3 self-start">
-                  <ActionPillButton
-                    compact
-                    label={
-                      isLibraryMutationPending
-                        ? "Saving..."
-                        : isInLibrary
-                          ? "Remove from Library"
-                          : "Add to Library"
-                    }
-                    onPress={() => {
-                      if (isLibraryMutationPending) {
-                        return;
+                  <View className="flex-row flex-wrap gap-2">
+                    <ActionPillButton
+                      compact
+                      label={
+                        isLibraryMutationPending
+                          ? "Saving..."
+                          : isInLibrary
+                            ? "Remove from Library"
+                            : "Add to Library"
                       }
+                      onPress={() => {
+                        if (isLibraryMutationPending) {
+                          return;
+                        }
 
-                      if (isInLibrary) {
-                        removeLibraryMutation.mutate({
+                        if (isInLibrary) {
+                          removeLibraryMutation.mutate({
+                            sourceId,
+                            mangaId,
+                          });
+                          return;
+                        }
+
+                        upsertLibraryMutation.mutate({
                           sourceId,
                           mangaId,
+                          mangaUrl: details.url,
+                          title: details.title,
+                          thumbnailUrl: details.thumbnailUrl,
+                          description: details.description,
+                          status: details.status,
                         });
-                        return;
-                      }
+                      }}
+                    />
 
-                      upsertLibraryMutation.mutate({
-                        sourceId,
-                        mangaId,
-                        mangaUrl: details.url,
-                        title: details.title,
-                        thumbnailUrl: details.thumbnailUrl,
-                        description: details.description,
-                        status: details.status,
-                      });
-                    }}
-                  />
+                    {latestProgress ? (
+                      <ActionPillButton
+                        compact
+                        label="Continue"
+                        onPress={() => {
+                          router.push({
+                            pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
+                            params: {
+                              sourceId,
+                              mangaId,
+                              chapterId: latestProgress.chapterId,
+                              initialPage: String(latestProgress.pageIndex),
+                            },
+                          });
+                        }}
+                      />
+                    ) : null}
+                  </View>
                 </View>
                 {details.status ? (
                   <Text className="mt-2 text-xs text-[#C8C9D2]">

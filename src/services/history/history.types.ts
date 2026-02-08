@@ -1,31 +1,25 @@
-export interface ReadingProgressEntry {
+export interface ReadingHistoryEntry {
   id: number;
   sourceId: string;
   mangaId: string;
   chapterId: string;
+  mangaTitle: string;
+  mangaThumbnailUrl?: string;
   chapterTitle?: string;
   chapterNumber?: number;
   pageIndex: number;
   totalPages?: number;
-  isCompleted: boolean;
   updatedAt: number;
 }
 
-export interface MangaLatestProgress {
+export interface UpsertReadingHistoryInput {
   sourceId: string;
   mangaId: string;
   chapterId: string;
-  pageIndex: number;
-  updatedAt: number;
-}
-
-export interface UpsertReadingProgressInput {
-  sourceId: string;
-  mangaId: string;
-  chapterId: string;
+  mangaTitle: string;
+  mangaThumbnailUrl?: string;
   chapterTitle?: string;
   chapterNumber?: number;
   pageIndex: number;
   totalPages?: number;
-  isCompleted?: boolean;
 }
