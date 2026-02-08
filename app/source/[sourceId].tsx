@@ -3,7 +3,13 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  FlatList,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import {
   getSourceLatestUpdates,
   getSourcePopularTitles,
@@ -15,6 +21,10 @@ import { useSource } from "@/services/source";
 import { SearchInput } from "@/shared/ui";
 
 type BrowseMode = "popular" | "latest" | "search";
+
+const GRID_COLUMNS = 3;
+const GRID_HORIZONTAL_PADDING = 16;
+const GRID_COLUMN_GAP = 12;
 
 const modeLabelMap: Record<BrowseMode, string> = {
   popular: "Popular",
@@ -86,6 +96,7 @@ const queryMangaPage = async (params: {
 
 export default function SourceMangaListScreen() {
   const queryClient = useQueryClient();
+  const { width: screenWidth } = useWindowDimensions();
   const router = useRouter();
   const params = useLocalSearchParams<{ sourceId?: string | string[] }>();
   const routeSourceId = getDecodedSourceId(params.sourceId);
@@ -222,6 +233,13 @@ export default function SourceMangaListScreen() {
     () => mangaQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [mangaQuery.data]
   );
+
+  const gridItemWidth = useMemo(() => {
+    const totalGaps = GRID_COLUMN_GAP * (GRID_COLUMNS - 1);
+    const totalPadding = GRID_HORIZONTAL_PADDING * 2;
+    const availableWidth = screenWidth - totalGaps - totalPadding;
+    return Math.max(1, Math.floor(availableWidth / GRID_COLUMNS));
+  }, [screenWidth]);
 
   if (!source) {
     return (
@@ -362,13 +380,13 @@ export default function SourceMangaListScreen() {
       ) : (
         <FlatList
           data={mangaItems}
-          numColumns={3}
+          numColumns={GRID_COLUMNS}
           keyExtractor={(item) => item.id}
           contentContainerClassName="px-4 pb-8"
-          columnWrapperStyle={{ gap: 12 }}
+          columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
           ItemSeparatorComponent={() => <View className="h-4" />}
           renderItem={({ item }) => (
-            <View className="flex-1 pb-2">
+            <View style={{ width: gridItemWidth }} className="pb-2">
               <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
                 <View style={{ aspectRatio: 2 / 3 }}>
                   {item.thumbnailUrl ? (
