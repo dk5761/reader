@@ -2,17 +2,16 @@ import { Input } from "heroui-native";
 import type { TextInputProps } from "react-native";
 import { View } from "react-native";
 
-export interface SearchInputProps
-  extends Pick<
-    TextInputProps,
-    | "value"
-    | "onChangeText"
-    | "placeholder"
-    | "autoFocus"
-    | "returnKeyType"
-    | "onSubmitEditing"
-    | "editable"
-  > {}
+export type SearchInputProps = Pick<
+  TextInputProps,
+  | "value"
+  | "onChangeText"
+  | "placeholder"
+  | "autoFocus"
+  | "returnKeyType"
+  | "onSubmitEditing"
+  | "editable"
+>;
 
 export const SearchInput = ({
   value,

@@ -4,7 +4,6 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { HeroUINativeProvider } from "heroui-native";
 import { PressablesConfig } from "pressto";
-import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { Uniwind } from "uniwind";
@@ -14,11 +13,9 @@ import { WebViewFetcherProvider } from "@/shared/contexts/WebViewFetcherContext"
 import { QueryProvider } from "@/services/query";
 import { CloudflareChallengeHost } from "@/services/network/cloudflare";
 
-export default function RootLayout() {
-  useEffect(() => {
-    Uniwind.setTheme("dark");
-  }, []);
+Uniwind.setTheme("dark");
 
+export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <QueryProvider>
