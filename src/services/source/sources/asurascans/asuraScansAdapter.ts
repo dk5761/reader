@@ -361,7 +361,7 @@ const parseChapters = (html: string): SourceChapter[] => {
   const root = parseHtmlRoot(html);
   const chapterRows = asArray(root.querySelectorAll(CHAPTER_LIST_SELECTOR));
 
-  return chapterRows
+  const parsedChapters = chapterRows
     .filter((row) => !row.querySelector("svg"))
     .map((row): SourceChapter | null => {
       const chapterAnchor = row.querySelector("a[href]");
@@ -394,6 +394,16 @@ const parseChapters = (html: string): SourceChapter[] => {
     .filter((chapter): chapter is SourceChapter =>
       Boolean(chapter && chapter.id && chapter.url && chapter.title)
     );
+
+  // Some page layouts can render duplicate chapter rows; keep first occurrence by id.
+  const uniqueChapterById = new Map<string, SourceChapter>();
+  parsedChapters.forEach((chapter) => {
+    if (!uniqueChapterById.has(chapter.id)) {
+      uniqueChapterById.set(chapter.id, chapter);
+    }
+  });
+
+  return Array.from(uniqueChapterById.values());
 };
 
 const parseChapterPages = async (

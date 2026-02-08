@@ -42,6 +42,10 @@ export default function RootLayout() {
                           name="source/[sourceId]"
                           options={{ headerShown: false }}
                         />
+                        <Stack.Screen
+                          name="manga/[sourceId]/[mangaId]"
+                          options={{ headerShown: false }}
+                        />
                       </Stack>
                     </SafeAreaView>
                     <CloudflareChallengeHost />

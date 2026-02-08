@@ -386,30 +386,43 @@ export default function SourceMangaListScreen() {
           columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
           ItemSeparatorComponent={() => <View className="h-4" />}
           renderItem={({ item }) => (
-            <View style={{ width: gridItemWidth }} className="pb-2">
-              <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
-                <View style={{ aspectRatio: 2 / 3 }}>
-                  {item.thumbnailUrl ? (
-                    <Image
-                      source={{ uri: item.thumbnailUrl }}
-                      contentFit="cover"
-                      style={{ width: "100%", height: "100%" }}
-                      transition={120}
-                    />
-                  ) : (
-                    <View className="h-full w-full items-center justify-center">
-                      <Text className="text-xs text-[#6D6E78]">No cover</Text>
-                    </View>
-                  )}
+            <PressableScale
+              style={{ width: gridItemWidth }}
+              onPress={() => {
+                router.push({
+                  pathname: "/manga/[sourceId]/[mangaId]",
+                  params: {
+                    sourceId: routeSourceId,
+                    mangaId: item.id,
+                  },
+                });
+              }}
+            >
+              <View className="pb-2">
+                <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
+                  <View style={{ aspectRatio: 2 / 3 }}>
+                    {item.thumbnailUrl ? (
+                      <Image
+                        source={{ uri: item.thumbnailUrl }}
+                        contentFit="cover"
+                        style={{ width: "100%", height: "100%" }}
+                        transition={120}
+                      />
+                    ) : (
+                      <View className="h-full w-full items-center justify-center">
+                        <Text className="text-xs text-[#6D6E78]">No cover</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
+                <Text
+                  numberOfLines={2}
+                  className="mt-2 pr-1 text-xs font-medium leading-5 text-[#D8D9E0]"
+                >
+                  {item.title}
+                </Text>
               </View>
-              <Text
-                numberOfLines={2}
-                className="mt-2 pr-1 text-xs font-medium leading-5 text-[#D8D9E0]"
-              >
-                {item.title}
-              </Text>
-            </View>
+            </PressableScale>
           )}
           onEndReachedThreshold={0.5}
           onEndReached={() => {
