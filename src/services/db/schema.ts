@@ -109,8 +109,62 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const libraryUpdateState = sqliteTable(
+  "library_update_state",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: text("source_id").notNull(),
+    mangaId: text("manga_id").notNull(),
+    chapterCount: integer("chapter_count").notNull().default(0),
+    latestChapterId: text("latest_chapter_id"),
+    latestChapterTitle: text("latest_chapter_title"),
+    latestChapterNumber: real("latest_chapter_number"),
+    latestChapterUploadedAt: text("latest_chapter_uploaded_at"),
+    latestChapterUploadedAtTs: integer("latest_chapter_uploaded_at_ts"),
+    lastCheckedAt: integer("last_checked_at").notNull(),
+    lastUpdateDetectedAt: integer("last_update_detected_at"),
+    firstSyncedAt: integer("first_synced_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("library_update_state_source_manga_unique").on(
+      table.sourceId,
+      table.mangaId
+    ),
+    index("library_update_state_last_checked_at_idx").on(table.lastCheckedAt),
+    index("library_update_state_last_update_detected_at_idx").on(table.lastUpdateDetectedAt),
+  ]
+);
+
+export const libraryUpdateEvents = sqliteTable(
+  "library_update_events",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    sourceId: text("source_id").notNull(),
+    mangaId: text("manga_id").notNull(),
+    mangaTitle: text("manga_title").notNull(),
+    mangaThumbnailUrl: text("manga_thumbnail_url"),
+    previousChapterCount: integer("previous_chapter_count").notNull(),
+    newChapterCount: integer("new_chapter_count").notNull(),
+    chapterDelta: integer("chapter_delta").notNull(),
+    previousLatestChapterUploadedAtTs: integer("previous_latest_chapter_uploaded_at_ts"),
+    newLatestChapterUploadedAtTs: integer("new_latest_chapter_uploaded_at_ts"),
+    detectionMode: text("detection_mode").notNull(),
+    detectedAt: integer("detected_at").notNull(),
+  },
+  (table) => [
+    index("library_update_events_detected_at_idx").on(table.detectedAt),
+    index("library_update_events_source_manga_detected_at_idx").on(
+      table.sourceId,
+      table.mangaId,
+      table.detectedAt
+    ),
+  ]
+);
+
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type ReadingProgressRow = typeof readingProgress.$inferSelect;
 export type ReadingHistoryRow = typeof readingHistory.$inferSelect;
 export type ReadingHistoryEventRow = typeof readingHistoryEvents.$inferSelect;
 export type AppSettingsRow = typeof appSettings.$inferSelect;
+export type LibraryUpdateStateRow = typeof libraryUpdateState.$inferSelect;
+export type LibraryUpdateEventRow = typeof libraryUpdateEvents.$inferSelect;

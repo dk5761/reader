@@ -90,4 +90,49 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 INSERT OR IGNORE INTO app_settings (id, allow_nsfw_sources, default_reader_mode, updated_at)
 VALUES (1, 0, 'vertical', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+
+CREATE TABLE IF NOT EXISTS library_update_state (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  source_id TEXT NOT NULL,
+  manga_id TEXT NOT NULL,
+  chapter_count INTEGER NOT NULL DEFAULT 0,
+  latest_chapter_id TEXT,
+  latest_chapter_title TEXT,
+  latest_chapter_number REAL,
+  latest_chapter_uploaded_at TEXT,
+  latest_chapter_uploaded_at_ts INTEGER,
+  last_checked_at INTEGER NOT NULL,
+  last_update_detected_at INTEGER,
+  first_synced_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS library_update_state_source_manga_unique
+  ON library_update_state (source_id, manga_id);
+
+CREATE INDEX IF NOT EXISTS library_update_state_last_checked_at_idx
+  ON library_update_state (last_checked_at);
+
+CREATE INDEX IF NOT EXISTS library_update_state_last_update_detected_at_idx
+  ON library_update_state (last_update_detected_at);
+
+CREATE TABLE IF NOT EXISTS library_update_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  source_id TEXT NOT NULL,
+  manga_id TEXT NOT NULL,
+  manga_title TEXT NOT NULL,
+  manga_thumbnail_url TEXT,
+  previous_chapter_count INTEGER NOT NULL,
+  new_chapter_count INTEGER NOT NULL,
+  chapter_delta INTEGER NOT NULL,
+  previous_latest_chapter_uploaded_at_ts INTEGER,
+  new_latest_chapter_uploaded_at_ts INTEGER,
+  detection_mode TEXT NOT NULL,
+  detected_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS library_update_events_detected_at_idx
+  ON library_update_events (detected_at);
+
+CREATE INDEX IF NOT EXISTS library_update_events_source_manga_detected_at_idx
+  ON library_update_events (source_id, manga_id, detected_at);
 `;

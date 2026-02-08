@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Switch } from "heroui-native";
 import { useMemo } from "react";
-import { Text, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
 import type { ReaderDefaultMode } from "@/services/settings";
 import {
   ActionPillButton,
@@ -14,6 +14,7 @@ import {
   appSettingsQueryOptions,
   useUpdateAppSettingsMutation,
 } from "../api";
+import { LibraryUpdateCard } from "../components/LibraryUpdateCard";
 
 export default function SettingsScreen() {
   const settingsQuery = useQuery(appSettingsQueryOptions());
@@ -74,7 +75,10 @@ export default function SettingsScreen() {
         />
       </View>
 
-      <View className="px-4">
+      <ScrollView
+        contentContainerClassName="px-4 pb-8"
+        showsVerticalScrollIndicator={false}
+      >
         <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4">
           <Text className="text-base font-semibold text-white">Content</Text>
 
@@ -119,6 +123,8 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        <LibraryUpdateCard />
+
         {updateSettingsMutation.isError ? (
           <View className="mt-3 rounded-xl border border-[#3A2A2A] bg-[#271A1A] p-3">
             <Text className="text-xs text-[#F3B7B7]">
@@ -126,7 +132,7 @@ export default function SettingsScreen() {
             </Text>
           </View>
         ) : null}
-      </View>
+      </ScrollView>
     </View>
   );
 }
