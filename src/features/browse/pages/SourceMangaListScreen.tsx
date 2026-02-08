@@ -253,7 +253,7 @@ export default function SourceMangaListScreen() {
     return (
       <CenteredState
         title="Source Not Found"
-        message="This adapter is not registered. Please go back and try another source."
+        message="This source is unavailable. It may be hidden by your 18+ source setting."
       >
         <Stack.Screen options={{ headerShown: false }} />
         <View className="mt-2">

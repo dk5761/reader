@@ -5,6 +5,7 @@ import { PressableScale } from "pressto";
 import { FlatList, Text, View } from "react-native";
 import { libraryEntriesQueryOptions } from "@/services/library";
 import { latestReadingProgressQueryOptions } from "@/services/progress";
+import { useSource } from "@/services/source";
 import {
   ActionPillButton,
   CenteredLoadingState,
@@ -14,8 +15,13 @@ import {
 
 export default function LibraryTabScreen() {
   const router = useRouter();
+  const { sources } = useSource();
   const libraryQuery = useQuery(libraryEntriesQueryOptions());
   const progressQuery = useQuery(latestReadingProgressQueryOptions(500));
+  const allowedSourceIds = new Set(sources.map((source) => source.id));
+  const libraryEntries = (libraryQuery.data ?? []).filter((entry) =>
+    allowedSourceIds.has(entry.sourceId)
+  );
 
   const progressByManga = new Map(
     (progressQuery.data ?? []).map((entry) => [
@@ -52,7 +58,7 @@ export default function LibraryTabScreen() {
         </CenteredState>
       ) : (
         <FlatList
-          data={libraryQuery.data}
+          data={libraryEntries}
           keyExtractor={(item) => `${item.sourceId}::${item.mangaId}`}
           contentContainerClassName="px-4 pb-8"
           ItemSeparatorComponent={() => <View className="h-3" />}
@@ -122,7 +128,7 @@ export default function LibraryTabScreen() {
           ListEmptyComponent={
             <View className="items-center py-10">
               <Text className="text-sm text-[#9B9CA6]">
-                No manga in your library yet.
+                No visible manga in your library.
               </Text>
             </View>
           }

@@ -14,6 +14,7 @@ interface InitializeReaderSessionInput {
   initialChapter: SourceChapter;
   initialPages: SourcePage[];
   initialPageIndex: number;
+  initialMode?: ReaderMode;
 }
 
 interface ReaderStoreState {
@@ -105,6 +106,7 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
     );
 
     set({
+      mode: input.initialMode ?? "vertical",
       sessionKey: input.sessionKey,
       meta: input.meta,
       chapters: input.chapters,

@@ -22,7 +22,9 @@ export default function TabsLayout() {
               ? "library-outline"
               : route.name === "browse"
                 ? "compass-outline"
-                : "ellipse-outline";
+                : route.name === "settings"
+                  ? "settings-outline"
+                  : "ellipse-outline";
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -38,6 +40,12 @@ export default function TabsLayout() {
         name="browse"
         options={{
           title: "Browse",
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: "Settings",
         }}
       />
     </Tabs>

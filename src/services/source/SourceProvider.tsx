@@ -1,11 +1,14 @@
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
+import { getAppSettings } from "@/services/settings";
 import {
   SourceNotFoundError,
   sourceRegistry,
@@ -27,33 +30,54 @@ const SourceContext = createContext<SourceContextValue | undefined>(undefined);
 initializeSourceSystem();
 
 export const SourceProvider = ({ children }: { children: ReactNode }) => {
-  const [sources, setSources] = useState<SourceDescriptor[]>(() =>
+  const [registeredSources, setRegisteredSources] = useState<SourceDescriptor[]>(() =>
     sourceRegistry.list()
   );
 
   const [selectedSourceIdState, setSelectedSourceIdState] =
-    useState<SourceId | null>(() => (sources[0] ? sources[0].id : null));
+    useState<SourceId | null>(() =>
+      sourceRegistry.list()[0] ? sourceRegistry.list()[0].id : null
+    );
+
+  const appSettingsQuery = useQuery({
+    queryKey: ["settings", "app"],
+    queryFn: () => getAppSettings(),
+  });
+
+  const allowNsfwSources = appSettingsQuery.data?.allowNsfwSources ?? false;
+  const sources = useMemo(
+    () =>
+      allowNsfwSources
+        ? registeredSources
+        : registeredSources.filter((source) => !source.isNsfw),
+    [allowNsfwSources, registeredSources]
+  );
 
   const refreshSources = useCallback(() => {
     const nextSources = sourceRegistry.list();
-    setSources(nextSources);
+    setRegisteredSources(nextSources);
+  }, []);
 
+  useEffect(() => {
     setSelectedSourceIdState((currentId) => {
-      if (currentId && nextSources.some((source) => source.id === currentId)) {
+      if (currentId && sources.some((source) => source.id === currentId)) {
         return currentId;
       }
 
-      return nextSources[0]?.id ?? null;
+      return sources[0]?.id ?? null;
     });
-  }, []);
+  }, [sources]);
 
-  const setSelectedSourceId = useCallback((sourceId: SourceId) => {
-    if (!sourceRegistry.has(sourceId)) {
-      throw new SourceNotFoundError(sourceId);
-    }
+  const setSelectedSourceId = useCallback(
+    (sourceId: SourceId) => {
+      if (!sources.some((source) => source.id === sourceId)) {
+        throw new SourceNotFoundError(sourceId);
+      }
 
-    setSelectedSourceIdState(sourceId);
-  }, []);
+      setSelectedSourceIdState(sourceId);
+    },
+    [sources]
+  );
 
   const selectedSource = useMemo(
     () =>

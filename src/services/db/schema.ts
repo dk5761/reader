@@ -70,6 +70,16 @@ export const readingHistory = sqliteTable(
   ]
 );
 
+export const appSettings = sqliteTable("app_settings", {
+  id: integer("id").primaryKey(),
+  allowNsfwSources: integer("allow_nsfw_sources", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  defaultReaderMode: text("default_reader_mode").notNull().default("vertical"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type ReadingProgressRow = typeof readingProgress.$inferSelect;
 export type ReadingHistoryRow = typeof readingHistory.$inferSelect;
+export type AppSettingsRow = typeof appSettings.$inferSelect;

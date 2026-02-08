@@ -1,8 +1,10 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { appSettingsQueryOptions } from "@/features/settings/api";
+import { useSource } from "@/services/source";
 import { useReaderChapterFlow, useReaderProgressSync, useReaderSession } from "../hooks";
 import { useReaderStore } from "../stores/useReaderStore";
 import type {
@@ -33,6 +35,7 @@ const getDecodedParam = (value: string | string[] | undefined): string => {
 export default function ReaderScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { sources } = useSource();
   const [requestedFlatIndex, setRequestedFlatIndex] = useState<number | null>(null);
   const params = useLocalSearchParams<{
     sourceId?: string | string[];
@@ -45,13 +48,19 @@ export default function ReaderScreen() {
   const mangaId = getDecodedParam(params.mangaId);
   const chapterId = getDecodedParam(params.chapterId);
   const initialPageParam = getDecodedParam(params.initialPage) || undefined;
+  const source = useMemo(
+    () => sources.find((entry) => entry.id === sourceId) ?? null,
+    [sourceId, sources]
+  );
 
   const session = useReaderSession({
-    sourceId,
+    sourceId: source ? sourceId : "",
     mangaId,
     chapterId,
     initialPageParam,
   });
+  const settingsQuery = useQuery(appSettingsQueryOptions());
+  const defaultReaderMode = settingsQuery.data?.defaultReaderMode ?? "vertical";
 
   const {
     mode,
@@ -81,7 +90,15 @@ export default function ReaderScreen() {
   const readerSessionKey = `${sourceId}::${mangaId}::${chapterId}`;
 
   useEffect(() => {
+    if (!source) {
+      return;
+    }
+
     if (!session.resolvedData) {
+      return;
+    }
+
+    if (settingsQuery.isPending) {
       return;
     }
 
@@ -96,8 +113,17 @@ export default function ReaderScreen() {
       initialChapter: session.resolvedData.initialChapter,
       initialPages: session.resolvedData.initialPages,
       initialPageIndex: session.resolvedData.initialPage,
+      initialMode: defaultReaderMode,
     });
-  }, [initializeSession, readerSessionKey, session.resolvedData, sessionKey]);
+  }, [
+    defaultReaderMode,
+    initializeSession,
+    readerSessionKey,
+    session.resolvedData,
+    sessionKey,
+    settingsQuery.isPending,
+    source,
+  ]);
 
   useEffect(
     () => () => {
@@ -286,6 +312,20 @@ export default function ReaderScreen() {
       <CenteredState
         title="Reader Not Available"
         message="Missing source, manga, or chapter identifier."
+      >
+        <Stack.Screen options={{ headerShown: false }} />
+        <View className="mt-2">
+          <BackButton onPress={() => router.back()} variant="pill" />
+        </View>
+      </CenteredState>
+    );
+  }
+
+  if (!source) {
+    return (
+      <CenteredState
+        title="Reader Not Available"
+        message="This source is unavailable. It may be hidden by your 18+ source setting."
       >
         <Stack.Screen options={{ headerShown: false }} />
         <View className="mt-2">

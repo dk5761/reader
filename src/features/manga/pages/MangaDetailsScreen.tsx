@@ -131,7 +131,7 @@ export default function MangaDetailsScreen() {
     return (
       <CenteredState
         title="Manga Not Found"
-        message="Missing or invalid source/manga identifier."
+        message="Missing or hidden source/manga identifier."
       >
         <Stack.Screen options={{ headerShown: false }} />
         <View className="mt-2">

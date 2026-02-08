@@ -60,4 +60,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS reading_history_source_manga_chapter_unique
 
 CREATE INDEX IF NOT EXISTS reading_history_updated_at_idx
   ON reading_history (updated_at);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  id INTEGER PRIMARY KEY NOT NULL,
+  allow_nsfw_sources INTEGER NOT NULL DEFAULT 0,
+  default_reader_mode TEXT NOT NULL DEFAULT 'vertical',
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO app_settings (id, allow_nsfw_sources, default_reader_mode, updated_at)
+VALUES (1, 0, 'vertical', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
 `;
