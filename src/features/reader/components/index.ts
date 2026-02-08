@@ -1,4 +1,5 @@
 export * from "./ReaderBottomBar";
+export * from "./ReaderChapterDivider";
 export * from "./ReaderHorizontalPager";
 export * from "./ReaderPageItem";
 export * from "./ReaderTopBar";

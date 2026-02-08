@@ -93,7 +93,11 @@ export const ReaderVerticalList = ({
 
   const renderItem = useCallback(
     ({ item }: { item: ReaderFlatPage }) => (
-      <ReaderPageItem page={item} onTap={onTapPage} />
+      <ReaderPageItem
+        page={item}
+        onTap={onTapPage}
+        showChapterDivider={item.chapterIndex > 0 && item.pageIndex === 0}
+      />
     ),
     [onTapPage]
   );

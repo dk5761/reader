@@ -13,15 +13,21 @@ import {
   getCachedPageDimensions,
   setCachedPageDimensions,
 } from "../utils/pageDimensionCache";
+import { ReaderChapterDivider } from "./ReaderChapterDivider";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface ReaderPageItemProps {
   page: ReaderFlatPage;
   onTap: () => void;
+  showChapterDivider?: boolean;
 }
 
-const ReaderPageItemComponent = ({ page, onTap }: ReaderPageItemProps) => {
+const ReaderPageItemComponent = ({
+  page,
+  onTap,
+  showChapterDivider = false,
+}: ReaderPageItemProps) => {
   const [dimensions, setDimensions] = useState<{ width: number; height: number } | null>(
     () => getCachedPageDimensions(page.imageUrl) ?? null
   );
@@ -58,37 +64,40 @@ const ReaderPageItemComponent = ({ page, onTap }: ReaderPageItemProps) => {
   }, [dimensions]);
 
   return (
-    <Pressable onPress={onTap}>
-      <View style={{ width: SCREEN_WIDTH, height: estimatedHeight }} className="bg-black">
-        {!loaded && !failed ? (
-          <View className="absolute inset-0 items-center justify-center">
-            <ActivityIndicator color="#67A4FF" />
-          </View>
-        ) : null}
+    <View className="bg-black">
+      {showChapterDivider ? <ReaderChapterDivider chapterTitle={page.chapterTitle} /> : null}
+      <Pressable onPress={onTap}>
+        <View style={{ width: SCREEN_WIDTH, height: estimatedHeight }} className="bg-black">
+          {!loaded && !failed ? (
+            <View className="absolute inset-0 items-center justify-center">
+              <ActivityIndicator color="#67A4FF" />
+            </View>
+          ) : null}
 
-        <Image
-          source={{ uri: page.imageUrl, headers: page.headers }}
-          contentFit="contain"
-          transition={120}
-          style={{ width: "100%", height: "100%" }}
-          recyclingKey={page.key}
-          onLoad={() => {
-            setLoaded(true);
-            setFailed(false);
-          }}
-          onError={() => {
-            setFailed(true);
-            setLoaded(true);
-          }}
-        />
+          <Image
+            source={{ uri: page.imageUrl, headers: page.headers }}
+            contentFit="contain"
+            transition={120}
+            style={{ width: "100%", height: "100%" }}
+            recyclingKey={page.key}
+            onLoad={() => {
+              setLoaded(true);
+              setFailed(false);
+            }}
+            onError={() => {
+              setFailed(true);
+              setLoaded(true);
+            }}
+          />
 
-        {failed ? (
-          <View className="absolute inset-0 items-center justify-center bg-black/70">
-            <Text className="text-xs text-[#C8C9D2]">Failed to load page</Text>
-          </View>
-        ) : null}
-      </View>
-    </Pressable>
+          {failed ? (
+            <View className="absolute inset-0 items-center justify-center bg-black/70">
+              <Text className="text-xs text-[#C8C9D2]">Failed to load page</Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    </View>
   );
 };
 
