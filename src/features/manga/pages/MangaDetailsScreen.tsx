@@ -5,6 +5,7 @@ import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
 import { FlatList, ListRenderItemInfo, Text, View } from "react-native";
+import { Pressable as GesturePressable } from "react-native-gesture-handler";
 import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import {
   libraryEntryQueryOptions,
@@ -339,6 +340,8 @@ export default function MangaDetailsScreen() {
         enabled={!isReadStateMutationPending}
         friction={1.6}
         rightThreshold={40}
+        dragOffsetFromRightEdge={18}
+        dragOffsetFromLeftEdge={18}
         overshootRight={false}
         containerStyle={{ borderRadius: 12 }}
         renderRightActions={(_progress, _translation, swipeableMethods) => (
@@ -401,7 +404,8 @@ export default function MangaDetailsScreen() {
         )}
       >
         <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-3 py-3">
-          <PressableScale
+          <GesturePressable
+            hitSlop={4}
             onPress={() => {
               const shouldResumeCurrentChapter = latestProgress?.chapterId === item.id;
               router.push({
@@ -441,7 +445,7 @@ export default function MangaDetailsScreen() {
                 <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
               ) : null}
             </View>
-          </PressableScale>
+          </GesturePressable>
         </View>
       </Swipeable>
     );
