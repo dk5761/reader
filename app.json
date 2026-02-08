@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "readerv2",
-    "slug": "readerv2",
+    "name": "manga-reader",
+    "slug": "manga-reader",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,8 +9,13 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
+      "bundleIdentifier": "com.drshnk.mangareader",
       "supportsTablet": true,
-      "bundleIdentifier": "com.dk.rezolv.readerv2"
+      "icon": {
+        "dark": "./assets/icons/ios-dark.png",
+        "light": "./assets/icons/ios-light.png",
+        "tinted": "./assets/icons/ios-tinted.png"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,9 +27,16 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+    "extra": {
+      "eas": {
+        "projectId": "20f97605-b540-423f-8b73-e990ee02f371"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/20f97605-b540-423f-8b73-e990ee02f371"
     },
     "plugins": [
       "expo-dev-client",
