@@ -58,3 +58,9 @@ export interface ReaderCurrentProgressPayload {
   pageIndex: number;
   totalPages?: number;
 }
+
+export interface ReaderPageMetrics {
+  currentPage: number;
+  totalPages: number;
+  chapterId: string | null;
+}

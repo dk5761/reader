@@ -1,3 +1,5 @@
+import Slider from "@react-native-community/slider";
+import { useEffect, useMemo, useState } from "react";
 import type { ReaderMode } from "../types/reader.types";
 import { Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -7,7 +9,9 @@ interface ReaderBottomBarProps {
   visible: boolean;
   mode: ReaderMode;
   onModeChange: (mode: ReaderMode) => void;
-  pageLabel: string;
+  currentPage: number;
+  totalPages: number;
+  onSeekPage: (pageIndex: number) => void;
   nextChapterError: string | null;
   onRetryNextChapter?: () => void;
 }
@@ -16,11 +20,31 @@ export const ReaderBottomBar = ({
   visible,
   mode,
   onModeChange,
-  pageLabel,
+  currentPage,
+  totalPages,
+  onSeekPage,
   nextChapterError,
   onRetryNextChapter,
 }: ReaderBottomBarProps) => {
   const insets = useSafeAreaInsets();
+  const [dragPage, setDragPage] = useState<number | null>(null);
+
+  const safeTotalPages = useMemo(() => {
+    if (!Number.isFinite(totalPages) || totalPages <= 0) {
+      return 1;
+    }
+
+    return Math.floor(totalPages);
+  }, [totalPages]);
+
+  const maxPageIndex = Math.max(0, safeTotalPages - 1);
+  const safeCurrentPage = Math.max(0, Math.min(Math.floor(currentPage), maxPageIndex));
+  const displayPage = dragPage ?? safeCurrentPage;
+  const pageLabel = `Page ${displayPage + 1} / ${safeTotalPages}`;
+
+  useEffect(() => {
+    setDragPage(null);
+  }, [safeTotalPages]);
 
   return (
     <View
@@ -42,6 +66,35 @@ export const ReaderBottomBar = ({
             onPress={() => onModeChange("vertical")}
           />
         </View>
+      </View>
+
+      <View className="mt-2">
+        <Slider
+          minimumValue={0}
+          maximumValue={maxPageIndex}
+          value={displayPage}
+          step={1}
+          disabled={maxPageIndex === 0}
+          minimumTrackTintColor="#67A4FF"
+          maximumTrackTintColor="#31323A"
+          thumbTintColor="#84B6FF"
+          onSlidingStart={() => {
+            setDragPage(safeCurrentPage);
+          }}
+          onValueChange={(value) => {
+            setDragPage(Math.max(0, Math.min(Math.round(value), maxPageIndex)));
+          }}
+          onSlidingComplete={(value) => {
+            const targetPage = Math.max(
+              0,
+              Math.min(Math.round(value), maxPageIndex)
+            );
+            setDragPage(null);
+            if (targetPage !== safeCurrentPage) {
+              onSeekPage(targetPage);
+            }
+          }}
+        />
       </View>
 
       {nextChapterError ? (

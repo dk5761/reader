@@ -1,5 +1,5 @@
 import PagerView from "react-native-pager-view";
-import { useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import type { SourcePage } from "@/services/source";
@@ -7,7 +7,7 @@ import type { SourcePage } from "@/services/source";
 interface ReaderHorizontalPagerProps {
   chapterId: string;
   pages: SourcePage[];
-  initialPageIndex: number;
+  currentPageIndex: number;
   onPageSelected: (pageIndex: number) => void;
   onReachEnd: () => void;
   onTapPage: () => void;
@@ -17,19 +17,46 @@ interface ReaderHorizontalPagerProps {
 export const ReaderHorizontalPager = ({
   chapterId,
   pages,
-  initialPageIndex,
+  currentPageIndex,
   onPageSelected,
   onReachEnd,
   onTapPage,
   onPageScrollStateChanged,
 }: ReaderHorizontalPagerProps) => {
+  const pagerRef = useRef<PagerView | null>(null);
+
+  const safeCurrentPage = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.min(currentPageIndex, Math.max(0, pages.length - 1))
+      ),
+    [currentPageIndex, pages.length]
+  );
+
+  const selectedPageRef = useRef(safeCurrentPage);
+
+  useEffect(() => {
+    selectedPageRef.current = safeCurrentPage;
+  }, [safeCurrentPage, chapterId]);
+
+  useEffect(() => {
+    if (selectedPageRef.current === safeCurrentPage) {
+      return;
+    }
+
+    selectedPageRef.current = safeCurrentPage;
+    pagerRef.current?.setPageWithoutAnimation(safeCurrentPage);
+  }, [safeCurrentPage]);
+
   const safeInitialPage = Math.max(
     0,
-    Math.min(initialPageIndex, Math.max(0, pages.length - 1))
+    Math.min(safeCurrentPage, Math.max(0, pages.length - 1))
   );
 
   const handlePageSelected = useCallback(
     (index: number) => {
+      selectedPageRef.current = index;
       onPageSelected(index);
       if (index >= pages.length - 1) {
         onReachEnd();
@@ -40,6 +67,7 @@ export const ReaderHorizontalPager = ({
 
   return (
     <PagerView
+      ref={pagerRef}
       key={chapterId}
       style={{ flex: 1, backgroundColor: "#000000" }}
       initialPage={safeInitialPage}

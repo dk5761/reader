@@ -1,11 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useReaderChapterFlow, useReaderProgressSync, useReaderSession } from "../hooks";
 import { useReaderStore } from "../stores/useReaderStore";
-import type { ReaderCurrentProgressPayload } from "../types/reader.types";
+import type {
+  ReaderCurrentProgressPayload,
+  ReaderPageMetrics,
+} from "../types/reader.types";
 import {
   ReaderBottomBar,
   ReaderHorizontalPager,
@@ -30,6 +33,7 @@ const getDecodedParam = (value: string | string[] | undefined): string => {
 export default function ReaderScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const [requestedFlatIndex, setRequestedFlatIndex] = useState<number | null>(null);
   const params = useLocalSearchParams<{
     sourceId?: string | string[];
     mangaId?: string | string[];
@@ -101,6 +105,12 @@ export default function ReaderScreen() {
     },
     [reset]
   );
+
+  useEffect(() => {
+    if (mode !== "vertical" && requestedFlatIndex !== null) {
+      setRequestedFlatIndex(null);
+    }
+  }, [mode, requestedFlatIndex]);
 
   const currentFlatPage = flatPages[currentFlatIndex] ?? null;
   const currentLoadedChapter =
@@ -194,21 +204,62 @@ export default function ReaderScreen() {
     }
   }, [chapterFlow, setCurrentHorizontalPosition]);
 
-  const pageLabel = useMemo(() => {
+  const pageMetrics = useMemo<ReaderPageMetrics>(() => {
     if (mode === "vertical") {
       if (!currentFlatPage) {
-        return "Page 0 / 0";
+        return {
+          currentPage: 0,
+          totalPages: 0,
+          chapterId: currentChapterId,
+        };
       }
 
-      return `Page ${currentFlatPage.pageIndex + 1} / ${currentFlatPage.totalPagesInChapter}`;
+      return {
+        currentPage: currentFlatPage.pageIndex,
+        totalPages: currentFlatPage.totalPagesInChapter,
+        chapterId: currentFlatPage.chapterId,
+      };
     }
 
     if (!currentLoadedChapter) {
-      return "Page 0 / 0";
+      return {
+        currentPage: 0,
+        totalPages: 0,
+        chapterId: currentChapterId,
+      };
     }
 
-    return `Page ${currentPageIndex + 1} / ${currentLoadedChapter.pages.length}`;
-  }, [currentFlatPage, currentLoadedChapter, currentPageIndex, mode]);
+    return {
+      currentPage: currentPageIndex,
+      totalPages: currentLoadedChapter.pages.length,
+      chapterId: currentLoadedChapter.chapter.id,
+    };
+  }, [currentChapterId, currentFlatPage, currentLoadedChapter, currentPageIndex, mode]);
+
+  const handleSeekPage = useCallback(
+    (targetPageIndex: number) => {
+      const activeChapterId = pageMetrics.chapterId;
+      if (!activeChapterId) {
+        return;
+      }
+
+      if (mode === "vertical") {
+        const targetFlatIndex = flatPages.findIndex(
+          (entry) =>
+            entry.chapterId === activeChapterId && entry.pageIndex === targetPageIndex
+        );
+
+        if (targetFlatIndex >= 0) {
+          setCurrentFlatIndex(targetFlatIndex);
+          setRequestedFlatIndex(targetFlatIndex);
+        }
+        return;
+      }
+
+      setCurrentHorizontalPosition(activeChapterId, targetPageIndex);
+    },
+    [flatPages, mode, pageMetrics.chapterId, setCurrentFlatIndex, setCurrentHorizontalPosition]
+  );
 
   const chapterTitle = useMemo(() => {
     if (mode === "vertical") {
@@ -286,8 +337,12 @@ export default function ReaderScreen() {
         <ReaderVerticalList
           pages={flatPages}
           initialFlatIndex={currentFlatIndex}
+          requestedFlatIndex={requestedFlatIndex}
           onVisibleFlatIndexChange={(index) => {
             setCurrentFlatIndex(index);
+            if (requestedFlatIndex !== null && index === requestedFlatIndex) {
+              setRequestedFlatIndex(null);
+            }
           }}
           onNearEnd={() => {
             void chapterFlow.loadNextChapter();
@@ -299,7 +354,7 @@ export default function ReaderScreen() {
         <ReaderHorizontalPager
           chapterId={currentLoadedChapter.chapter.id}
           pages={currentLoadedChapter.pages}
-          initialPageIndex={currentPageIndex}
+          currentPageIndex={currentPageIndex}
           onPageSelected={(pageIndex) => {
             setCurrentHorizontalPosition(currentLoadedChapter.chapter.id, pageIndex);
           }}
@@ -329,7 +384,9 @@ export default function ReaderScreen() {
         visible={isOverlayVisible}
         mode={mode}
         onModeChange={setMode}
-        pageLabel={pageLabel}
+        currentPage={pageMetrics.currentPage}
+        totalPages={pageMetrics.totalPages}
+        onSeekPage={handleSeekPage}
         nextChapterError={nextChapterError}
         onRetryNextChapter={() => {
           void chapterFlow.loadNextChapter();
