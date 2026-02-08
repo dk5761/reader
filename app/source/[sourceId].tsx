@@ -18,7 +18,15 @@ import {
   type SourceManga,
 } from "@/services/source";
 import { useSource } from "@/services/source";
-import { SearchInput } from "@/shared/ui";
+import {
+  ActionPillButton,
+  BackButton,
+  CenteredLoadingState,
+  CenteredState,
+  ScreenHeader,
+  SearchInput,
+  SelectableChip,
+} from "@/shared/ui";
 
 type BrowseMode = "popular" | "latest" | "search";
 
@@ -243,37 +251,29 @@ export default function SourceMangaListScreen() {
 
   if (!source) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#111214] px-6">
+      <CenteredState
+        title="Source Not Found"
+        message="This adapter is not registered. Please go back and try another source."
+      >
         <Stack.Screen options={{ headerShown: false }} />
-        <Text className="text-lg font-semibold text-white">Source Not Found</Text>
-        <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-          This adapter is not registered. Please go back and try another source.
-        </Text>
-        <PressableScale onPress={() => router.back()}>
-          <View className="mt-4 rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-            <Text className="text-sm font-medium text-white">Back</Text>
-          </View>
-        </PressableScale>
-      </View>
+        <View className="mt-2">
+          <BackButton onPress={() => router.back()} variant="pill" />
+        </View>
+      </CenteredState>
     );
   }
 
   if (supportedModes.length === 0) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#111214] px-6">
+      <CenteredState
+        title="No Supported Browse Mode"
+        message="This source does not expose popular, latest, or search capabilities."
+      >
         <Stack.Screen options={{ headerShown: false }} />
-        <Text className="text-lg font-semibold text-white">
-          No Supported Browse Mode
-        </Text>
-        <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-          This source does not expose popular, latest, or search capabilities.
-        </Text>
-        <PressableScale onPress={() => router.back()}>
-          <View className="mt-4 rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-            <Text className="text-sm font-medium text-white">Back</Text>
-          </View>
-        </PressableScale>
-      </View>
+        <View className="mt-2">
+          <BackButton onPress={() => router.back()} variant="pill" />
+        </View>
+      </CenteredState>
     );
   }
 
@@ -282,36 +282,22 @@ export default function SourceMangaListScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <View className="px-4 pb-2 pt-2">
-        <PressableScale onPress={() => router.back()}>
-          <View className="mb-3 self-start">
-            <Text className="text-sm text-[#8B8D98]">Back</Text>
-          </View>
-        </PressableScale>
-
-        <Text className="text-2xl font-bold text-white">{source.name}</Text>
-        <Text className="mt-1 text-sm text-[#9B9CA6]">Manga list from this adapter.</Text>
+        <ScreenHeader
+          title={source.name}
+          subtitle="Manga list from this adapter."
+          onBackPress={() => router.back()}
+        />
       </View>
 
       <View className="gap-3 px-4 pb-3">
         <View className="flex-row flex-wrap gap-2">
           {visibleModes.map((itemMode) => (
-            <PressableScale key={itemMode} onPress={() => setMode(itemMode)}>
-              <View
-                className={`rounded-full border px-3 py-1.5 ${
-                  mode === itemMode
-                    ? "border-[#67A4FF] bg-[#67A4FF]/20"
-                    : "border-[#2A2A2E] bg-[#1A1B1E]"
-                }`}
-              >
-                <Text
-                  className={`text-xs font-medium ${
-                    mode === itemMode ? "text-[#84B6FF]" : "text-[#C8C9D2]"
-                  }`}
-                >
-                  {modeLabelMap[itemMode]}
-                </Text>
-              </View>
-            </PressableScale>
+            <SelectableChip
+              key={itemMode}
+              label={modeLabelMap[itemMode]}
+              selected={mode === itemMode}
+              onPress={() => setMode(itemMode)}
+            />
           ))}
         </View>
 
@@ -326,57 +312,42 @@ export default function SourceMangaListScreen() {
         {supportsFilters ? (
           <View className="flex-row flex-wrap gap-2">
             {(["all", "ongoing", "completed"] as const).map((value) => (
-              <PressableScale key={value} onPress={() => setStatusFilter(value)}>
-                <View
-                  className={`rounded-full border px-3 py-1.5 ${
-                    statusFilter === value
-                      ? "border-[#67A4FF] bg-[#67A4FF]/20"
-                      : "border-[#2A2A2E] bg-[#1A1B1E]"
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium ${
-                      statusFilter === value ? "text-[#84B6FF]" : "text-[#C8C9D2]"
-                    }`}
-                  >
-                    {value}
-                  </Text>
-                </View>
-              </PressableScale>
+              <SelectableChip
+                key={value}
+                label={value}
+                selected={statusFilter === value}
+                onPress={() => setStatusFilter(value)}
+              />
             ))}
           </View>
         ) : null}
       </View>
 
       {isSearchIdle ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-sm text-[#9B9CA6]">
-            Enter a title to start searching.
-          </Text>
-        </View>
+        <CenteredState
+          withBackground={false}
+          message="Enter a title to start searching."
+        />
       ) : mangaQuery.isPending ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#67A4FF" />
-          <Text className="mt-3 text-sm text-[#9B9CA6]">Loading manga...</Text>
-        </View>
+        <CenteredLoadingState
+          withBackground={false}
+          message="Loading manga..."
+        />
       ) : mangaQuery.isError ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-center text-base font-semibold text-white">
-            Could not load manga list
-          </Text>
-          <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-            {mangaQuery.error.message}
-          </Text>
-          <PressableScale
-            onPress={() => {
-              void mangaQuery.refetch();
-            }}
-          >
-            <View className="mt-4 rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-              <Text className="text-sm font-medium text-white">Retry</Text>
-            </View>
-          </PressableScale>
-        </View>
+        <CenteredState
+          withBackground={false}
+          title="Could not load manga list"
+          message={mangaQuery.error.message}
+        >
+          <View className="mt-4">
+            <ActionPillButton
+              label="Retry"
+              onPress={() => {
+                void mangaQuery.refetch();
+              }}
+            />
+          </View>
+        </CenteredState>
       ) : (
         <FlatList
           data={mangaItems}

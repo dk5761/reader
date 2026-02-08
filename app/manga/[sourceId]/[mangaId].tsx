@@ -3,13 +3,7 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  FlatList,
-  ListRenderItemInfo,
-  Text,
-  View,
-} from "react-native";
+import { FlatList, ListRenderItemInfo, Text, View } from "react-native";
 import {
   getSourceChapters,
   getSourceMangaDetails,
@@ -17,6 +11,12 @@ import {
   type SourceChapter,
 } from "@/services/source";
 import { useSource } from "@/services/source";
+import {
+  ActionPillButton,
+  BackButton,
+  CenteredLoadingState,
+  CenteredState,
+} from "@/shared/ui";
 
 const CHAPTERS_PAGE_SIZE = 50;
 
@@ -106,58 +106,43 @@ export default function MangaDetailsScreen() {
 
   if (!source || !sourceId || !mangaId) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#111214] px-6">
+      <CenteredState
+        title="Manga Not Found"
+        message="Missing or invalid source/manga identifier."
+      >
         <Stack.Screen options={{ headerShown: false }} />
-        <Text className="text-lg font-semibold text-white">Manga Not Found</Text>
-        <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-          Missing or invalid source/manga identifier.
-        </Text>
-        <PressableScale onPress={() => router.back()}>
-          <View className="mt-4 rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-            <Text className="text-sm font-medium text-white">Back</Text>
-          </View>
-        </PressableScale>
-      </View>
+        <View className="mt-2">
+          <BackButton onPress={() => router.back()} variant="pill" />
+        </View>
+      </CenteredState>
     );
   }
 
   if (detailsQuery.isPending || chaptersQuery.isPending) {
     return (
-      <View className="flex-1 items-center justify-center bg-[#111214]">
+      <>
         <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator color="#67A4FF" />
-        <Text className="mt-3 text-sm text-[#9B9CA6]">Loading manga details...</Text>
-      </View>
+        <CenteredLoadingState message="Loading manga details..." />
+      </>
     );
   }
 
   if (detailsQuery.isError || chaptersQuery.isError || !detailsQuery.data) {
     const errorMessage = detailsQuery.error?.message ?? chaptersQuery.error?.message;
     return (
-      <View className="flex-1 items-center justify-center bg-[#111214] px-6">
+      <CenteredState title="Could not load manga" message={errorMessage ?? "Unknown error."}>
         <Stack.Screen options={{ headerShown: false }} />
-        <Text className="text-lg font-semibold text-white">Could not load manga</Text>
-        <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-          {errorMessage ?? "Unknown error."}
-        </Text>
         <View className="mt-4 flex-row gap-2">
-          <PressableScale
+          <ActionPillButton
+            label="Retry"
             onPress={() => {
               void detailsQuery.refetch();
               void chaptersQuery.refetch();
             }}
-          >
-            <View className="rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-              <Text className="text-sm font-medium text-white">Retry</Text>
-            </View>
-          </PressableScale>
-          <PressableScale onPress={() => router.back()}>
-            <View className="rounded-full border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-2">
-              <Text className="text-sm font-medium text-white">Back</Text>
-            </View>
-          </PressableScale>
+          />
+          <BackButton onPress={() => router.back()} variant="pill" />
         </View>
-      </View>
+      </CenteredState>
     );
   }
 
@@ -184,11 +169,7 @@ export default function MangaDetailsScreen() {
         ItemSeparatorComponent={() => <View className="h-2" />}
         ListHeaderComponent={
           <View className="pb-4 pt-2">
-            <PressableScale onPress={() => router.back()}>
-              <View className="mb-3 self-start">
-                <Text className="text-sm text-[#8B8D98]">Back</Text>
-              </View>
-            </PressableScale>
+            <BackButton onPress={() => router.back()} />
 
             <View className="flex-row gap-3">
               <View className="w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">

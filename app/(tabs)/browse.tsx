@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { ScrollView, Text, View } from "react-native";
 import { useSource } from "@/services/source";
+import { CenteredState, ScreenHeader } from "@/shared/ui";
 
 const getHostLabel = (baseUrl: string): string => {
   try {
@@ -19,19 +20,18 @@ export default function BrowseTabScreen() {
   return (
     <View className="flex-1 bg-[#111214]">
       <View className="px-4 pb-3 pt-2">
-        <Text className="text-2xl font-bold text-white">Browse</Text>
-        <Text className="mt-1 text-sm text-[#9B9CA6]">
-          Select a source adapter to open its manga list.
-        </Text>
+        <ScreenHeader
+          title="Browse"
+          subtitle="Select a source adapter to open its manga list."
+        />
       </View>
 
       {sources.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <Text className="text-base font-semibold text-white">No adapters found</Text>
-          <Text className="mt-2 text-center text-sm text-[#9B9CA6]">
-            Register at least one source adapter to start browsing.
-          </Text>
-        </View>
+        <CenteredState
+          withBackground={false}
+          title="No adapters found"
+          message="Register at least one source adapter to start browsing."
+        />
       ) : (
         <ScrollView
           showsVerticalScrollIndicator={false}
