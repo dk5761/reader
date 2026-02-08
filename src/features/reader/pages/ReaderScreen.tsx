@@ -68,6 +68,7 @@ export default function ReaderScreen() {
     meta,
     chapters,
     loadedChapters,
+    loadedChapterIdsSet,
     flatPages,
     currentFlatIndex,
     currentChapterId,
@@ -77,6 +78,7 @@ export default function ReaderScreen() {
     nextChapterError,
     initializeSession,
     appendChapterPages,
+    pruneVerticalWindow,
     setCurrentFlatIndex,
     setCurrentHorizontalPosition,
     setMode,
@@ -137,6 +139,32 @@ export default function ReaderScreen() {
       setRequestedFlatIndex(null);
     }
   }, [mode, requestedFlatIndex]);
+
+  useEffect(() => {
+    if (mode !== "vertical") {
+      return;
+    }
+
+    if (!currentChapterId) {
+      return;
+    }
+
+    if (loadedChapters.length <= 2) {
+      return;
+    }
+
+    if (requestedFlatIndex !== null) {
+      setRequestedFlatIndex(null);
+    }
+
+    pruneVerticalWindow();
+  }, [
+    currentChapterId,
+    loadedChapters.length,
+    mode,
+    pruneVerticalWindow,
+    requestedFlatIndex,
+  ]);
 
   const currentFlatPage = flatPages[currentFlatIndex] ?? null;
   const currentLoadedChapter =
@@ -201,16 +229,11 @@ export default function ReaderScreen() {
     enabled: Boolean(meta),
   });
 
-  const loadedChapterIds = useMemo(
-    () => loadedChapters.map((entry) => entry.chapter.id),
-    [loadedChapters]
-  );
-
   const chapterFlow = useReaderChapterFlow({
     sourceId,
     chapters,
     currentChapterId,
-    loadedChapterIds,
+    loadedChapterIdsSet,
     isLoadingNextChapter,
     queryClient,
     onAppendChapter: appendChapterPages,
@@ -270,6 +293,10 @@ export default function ReaderScreen() {
       }
 
       if (mode === "vertical") {
+        if (targetPageIndex < 0 || targetPageIndex >= pageMetrics.totalPages) {
+          return;
+        }
+
         const targetFlatIndex = flatPages.findIndex(
           (entry) =>
             entry.chapterId === activeChapterId && entry.pageIndex === targetPageIndex
@@ -284,7 +311,14 @@ export default function ReaderScreen() {
 
       setCurrentHorizontalPosition(activeChapterId, targetPageIndex);
     },
-    [flatPages, mode, pageMetrics.chapterId, setCurrentFlatIndex, setCurrentHorizontalPosition]
+    [
+      flatPages,
+      mode,
+      pageMetrics.chapterId,
+      pageMetrics.totalPages,
+      setCurrentFlatIndex,
+      setCurrentHorizontalPosition,
+    ]
   );
 
   const chapterTitle = useMemo(() => {

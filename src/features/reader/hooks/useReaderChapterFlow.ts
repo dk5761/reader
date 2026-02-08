@@ -7,7 +7,7 @@ interface UseReaderChapterFlowParams {
   sourceId: string;
   chapters: SourceChapter[];
   currentChapterId: string | null;
-  loadedChapterIds: string[];
+  loadedChapterIdsSet: string[];
   isLoadingNextChapter: boolean;
   queryClient: QueryClient;
   onAppendChapter: (chapter: SourceChapter, pages: Awaited<ReturnType<typeof prefetchReaderChapterPages>>) => void;
@@ -18,7 +18,7 @@ interface UseReaderChapterFlowParams {
 const resolveNextChapter = (
   chapters: SourceChapter[],
   currentChapterId: string,
-  loadedChapterIds: string[]
+  loadedChapterIdsSet: string[]
 ): SourceChapter | null => {
   const currentIndex = chapters.findIndex((chapter) => chapter.id === currentChapterId);
   if (currentIndex < 0) {
@@ -31,7 +31,7 @@ const resolveNextChapter = (
       .filter(
         (chapter) =>
           chapter.id !== current.id &&
-          !loadedChapterIds.includes(chapter.id) &&
+          !loadedChapterIdsSet.includes(chapter.id) &&
           chapter.number !== undefined &&
           Number.isFinite(chapter.number) &&
           chapter.number > current.number!
@@ -45,7 +45,7 @@ const resolveNextChapter = (
 
   for (let index = currentIndex + 1; index < chapters.length; index += 1) {
     const candidate = chapters[index];
-    if (!loadedChapterIds.includes(candidate.id)) {
+    if (!loadedChapterIdsSet.includes(candidate.id)) {
       return candidate;
     }
   }
@@ -57,7 +57,7 @@ export const useReaderChapterFlow = ({
   sourceId,
   chapters,
   currentChapterId,
-  loadedChapterIds,
+  loadedChapterIdsSet,
   isLoadingNextChapter,
   queryClient,
   onAppendChapter,
@@ -69,14 +69,14 @@ export const useReaderChapterFlow = ({
       return null;
     }
 
-    return resolveNextChapter(chapters, currentChapterId, loadedChapterIds);
-  }, [chapters, currentChapterId, loadedChapterIds]);
+    return resolveNextChapter(chapters, currentChapterId, loadedChapterIdsSet);
+  }, [chapters, currentChapterId, loadedChapterIdsSet]);
 
   const canLoadNextChapter = Boolean(
     nextChapter &&
       sourceId &&
       !isLoadingNextChapter &&
-      !loadedChapterIds.includes(nextChapter.id)
+      !loadedChapterIdsSet.includes(nextChapter.id)
   );
 
   const loadNextChapter = useCallback(async () => {
@@ -84,7 +84,7 @@ export const useReaderChapterFlow = ({
       return false;
     }
 
-    if (loadedChapterIds.includes(nextChapter.id)) {
+    if (loadedChapterIdsSet.includes(nextChapter.id)) {
       return false;
     }
 
@@ -104,7 +104,7 @@ export const useReaderChapterFlow = ({
     }
   }, [
     isLoadingNextChapter,
-    loadedChapterIds,
+    loadedChapterIdsSet,
     nextChapter,
     onAppendChapter,
     queryClient,
