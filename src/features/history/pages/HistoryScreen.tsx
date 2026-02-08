@@ -1,12 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { Accordion, Card } from "heroui-native";
+import { Card } from "heroui-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useMemo } from "react";
 import { FlatList, Text, View } from "react-native";
-import type { ReadingHistoryChapterItem, ReadingHistoryMangaGroup } from "@/services/history";
+import type { ReadingHistoryMangaGroup } from "@/services/history";
 import { useSource } from "@/services/source";
 import {
   ActionPillButton,
@@ -44,31 +44,6 @@ const formatRelativeTime = (timestamp: number): string => {
   return new Date(timestamp).toLocaleDateString();
 };
 
-const formatChapterLabel = (chapter: ReadingHistoryChapterItem): string => {
-  if (chapter.chapterTitle?.trim()) {
-    return chapter.chapterTitle.trim();
-  }
-
-  if (chapter.chapterNumber !== undefined) {
-    return `Chapter ${chapter.chapterNumber}`;
-  }
-
-  return `Chapter ${chapter.chapterId}`;
-};
-
-const formatChapterMeta = (chapter: ReadingHistoryChapterItem): string => {
-  const parts: string[] = [];
-
-  if (chapter.totalPages && chapter.totalPages > 0) {
-    parts.push(`Page ${chapter.pageIndex + 1}/${chapter.totalPages}`);
-  } else {
-    parts.push(`Page ${chapter.pageIndex + 1}`);
-  }
-
-  parts.push(new Date(chapter.updatedAt).toLocaleString());
-  return parts.join(" • ");
-};
-
 export default function HistoryScreen() {
   const router = useRouter();
   const { sources } = useSource();
@@ -100,7 +75,7 @@ export default function HistoryScreen() {
         <PressableScale
           onPress={() => {
             router.push({
-              pathname: "/manga/[sourceId]/[mangaId]",
+              pathname: "/history/[sourceId]/[mangaId]",
               params: {
                 sourceId: item.sourceId,
                 mangaId: item.mangaId,
@@ -108,7 +83,7 @@ export default function HistoryScreen() {
             });
           }}
         >
-          <View className="flex-row items-start gap-2.5 border-b border-[#2A2A2E] px-2 py-2">
+          <View className="flex-row items-start gap-2.5 px-2 py-2">
             <View className="h-20 w-14 overflow-hidden rounded-lg bg-[#111214]">
               {item.mangaThumbnailUrl ? (
                 <Image
@@ -134,11 +109,9 @@ export default function HistoryScreen() {
               <Text className="mt-1.5 text-xs text-[#B0B2BD]">
                 Last read {formatRelativeTime(item.latestReadAt)}
               </Text>
-              {item.chapters[0] ? (
-                <Text numberOfLines={1} className="mt-1 text-xs text-[#8B8D98]">
-                  Latest: {formatChapterLabel(item.chapters[0])}
-                </Text>
-              ) : null}
+              <Text className="mt-1 text-xs text-[#8B8D98]">
+                Tap to view chapter history
+              </Text>
             </View>
 
             <View className="mt-1 h-8 w-8 items-center justify-center rounded-full bg-[#1E2024]">
@@ -146,46 +119,6 @@ export default function HistoryScreen() {
             </View>
           </View>
         </PressableScale>
-
-        <View className="px-2 pb-2 pt-2">
-          <Accordion
-            selectionMode="single"
-            hideSeparator
-            isCollapsible
-            animation="disable-all"
-            className="rounded-xl bg-[#131418]"
-          >
-            <Accordion.Item value="chapters">
-              <Accordion.Trigger className="min-h-0 px-3 py-2.5">
-                <View className="flex-1">
-                  <Text className="text-sm font-semibold text-[#D6D8E1]">Recent chapters</Text>
-                  <Text className="mt-0.5 text-xs text-[#8B8D98]">
-                    {item.chapters.length} chapter{item.chapters.length === 1 ? "" : "s"}
-                  </Text>
-                </View>
-                <Accordion.Indicator />
-              </Accordion.Trigger>
-
-              <Accordion.Content>
-                <View className="px-2.5 pb-2">
-                  {item.chapters.map((chapter, index) => (
-                    <View
-                      key={`${chapter.sourceId}::${chapter.mangaId}::${chapter.chapterId}`}
-                      className={index === 0 ? "py-1.5" : "border-t border-[#26282D] py-1.5"}
-                    >
-                      <Text numberOfLines={2} className="text-sm font-medium text-white">
-                        {formatChapterLabel(chapter)}
-                      </Text>
-                      <Text className="mt-1 text-xs text-[#8B8D98]">
-                        {formatChapterMeta(chapter)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </Accordion.Content>
-            </Accordion.Item>
-          </Accordion>
-        </View>
       </Card.Body>
     </Card>
   );

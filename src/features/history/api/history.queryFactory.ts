@@ -13,5 +13,10 @@ export const historyQueryFactory = {
 
   mangaLatest: (sourceId: string, mangaId: string) =>
     [...historyQueryFactory.all(), "manga-latest", sourceId, mangaId] as const,
-};
 
+  mangaTimeline: (sourceId: string, mangaId: string) =>
+    [...historyQueryFactory.all(), "manga-timeline", sourceId, mangaId] as const,
+
+  mangaTimelinePage: (sourceId: string, mangaId: string, pageSize: number) =>
+    [...historyQueryFactory.mangaTimeline(sourceId, mangaId), pageSize] as const,
+};

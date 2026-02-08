@@ -61,6 +61,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS reading_history_source_manga_chapter_unique
 CREATE INDEX IF NOT EXISTS reading_history_updated_at_idx
   ON reading_history (updated_at);
 
+CREATE TABLE IF NOT EXISTS reading_history_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  source_id TEXT NOT NULL,
+  manga_id TEXT NOT NULL,
+  chapter_id TEXT NOT NULL,
+  manga_title TEXT NOT NULL,
+  manga_thumbnail_url TEXT,
+  chapter_title TEXT,
+  chapter_number REAL,
+  page_index INTEGER NOT NULL DEFAULT 0,
+  total_pages INTEGER,
+  recorded_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS reading_history_events_source_manga_recorded_at_idx
+  ON reading_history_events (source_id, manga_id, recorded_at);
+
+CREATE INDEX IF NOT EXISTS reading_history_events_source_manga_chapter_recorded_at_idx
+  ON reading_history_events (source_id, manga_id, chapter_id, recorded_at);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   id INTEGER PRIMARY KEY NOT NULL,
   allow_nsfw_sources INTEGER NOT NULL DEFAULT 0,

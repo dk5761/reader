@@ -48,3 +48,40 @@ export interface GetGroupedReadingHistoryInput {
   entryLimit?: number;
   perMangaChapterLimit?: number;
 }
+
+export interface ReadingHistoryEvent {
+  id: number;
+  sourceId: string;
+  mangaId: string;
+  chapterId: string;
+  mangaTitle: string;
+  mangaThumbnailUrl?: string;
+  chapterTitle?: string;
+  chapterNumber?: number;
+  pageIndex: number;
+  totalPages?: number;
+  recordedAt: number;
+}
+
+export interface InsertReadingHistoryEventInput {
+  sourceId: string;
+  mangaId: string;
+  chapterId: string;
+  mangaTitle: string;
+  mangaThumbnailUrl?: string;
+  chapterTitle?: string;
+  chapterNumber?: number;
+  pageIndex: number;
+  totalPages?: number;
+  recordedAt?: number;
+}
+
+export interface GetMangaHistoryEventsInput {
+  limit?: number;
+  cursor?: number;
+}
+
+export interface MangaHistoryEventsPage {
+  items: ReadingHistoryEvent[];
+  nextCursor: number | null;
+}

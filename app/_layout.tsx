@@ -49,6 +49,10 @@ export default function RootLayout() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
+                          name="history/[sourceId]/[mangaId]"
+                          options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
                           name="reader/[sourceId]/[mangaId]/[chapterId]"
                           options={{ headerShown: false }}
                         />

@@ -2,12 +2,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 import { AppState } from "react-native";
 import { historyQueryFactory } from "@/features/history/api";
-import { upsertReadingHistoryEntry } from "@/services/history";
+import { insertReadingHistoryEvent, upsertReadingHistoryEntry } from "@/services/history";
 import { upsertReadingProgress } from "@/services/progress";
 import { progressQueryFactory } from "@/services/progress/progress.queryFactory";
 import type { ReaderCurrentProgressPayload } from "../types/reader.types";
 
 const SAVE_THROTTLE_MS = 400;
+const TIMELINE_DUPLICATE_GUARD_MS = 5000;
 
 interface UseReaderProgressSyncParams {
   payload: ReaderCurrentProgressPayload | null;
@@ -20,9 +21,67 @@ export const useReaderProgressSync = ({
 }: UseReaderProgressSyncParams) => {
   const queryClient = useQueryClient();
   const pendingPayloadRef = useRef<ReaderCurrentProgressPayload | null>(null);
+  const activeChapterPayloadRef = useRef<ReaderCurrentProgressPayload | null>(null);
+  const lastCommittedTimelineRef = useRef<{ signature: string; recordedAt: number } | null>(
+    null
+  );
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flush = useCallback(() => {
+  const commitTimelineEvent = useCallback(
+    (timelinePayload: ReaderCurrentProgressPayload | null) => {
+      if (!timelinePayload) {
+        return;
+      }
+
+      const signature = [
+        timelinePayload.sourceId,
+        timelinePayload.mangaId,
+        timelinePayload.chapterId,
+        timelinePayload.pageIndex,
+        timelinePayload.totalPages ?? "unknown",
+      ].join("::");
+
+      const now = Date.now();
+      const lastCommitted = lastCommittedTimelineRef.current;
+      if (
+        lastCommitted &&
+        lastCommitted.signature === signature &&
+        now - lastCommitted.recordedAt < TIMELINE_DUPLICATE_GUARD_MS
+      ) {
+        return;
+      }
+
+      insertReadingHistoryEvent({
+        sourceId: timelinePayload.sourceId,
+        mangaId: timelinePayload.mangaId,
+        chapterId: timelinePayload.chapterId,
+        mangaTitle: timelinePayload.mangaTitle,
+        mangaThumbnailUrl: timelinePayload.mangaThumbnailUrl,
+        chapterTitle: timelinePayload.chapterTitle,
+        chapterNumber: timelinePayload.chapterNumber,
+        pageIndex: timelinePayload.pageIndex,
+        totalPages: timelinePayload.totalPages,
+        recordedAt: now,
+      });
+
+      lastCommittedTimelineRef.current = { signature, recordedAt: now };
+
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: historyQueryFactory.mangaTimeline(
+            timelinePayload.sourceId,
+            timelinePayload.mangaId
+          ),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: historyQueryFactory.all(),
+        }),
+      ]);
+    },
+    [queryClient]
+  );
+
+  const flushSnapshot = useCallback(() => {
     const pendingPayload = pendingPayloadRef.current;
     if (!pendingPayload) {
       return;
@@ -94,16 +153,25 @@ export const useReaderProgressSync = ({
       return;
     }
 
+    const activeChapterPayload = activeChapterPayloadRef.current;
+    if (
+      activeChapterPayload &&
+      activeChapterPayload.chapterId !== payload.chapterId
+    ) {
+      commitTimelineEvent(activeChapterPayload);
+    }
+
+    activeChapterPayloadRef.current = payload;
     pendingPayloadRef.current = payload;
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
 
     timeoutRef.current = setTimeout(() => {
-      flush();
+      flushSnapshot();
       timeoutRef.current = null;
     }, SAVE_THROTTLE_MS);
-  }, [enabled, flush, payload]);
+  }, [commitTimelineEvent, enabled, flushSnapshot, payload]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (state) => {
@@ -112,7 +180,8 @@ export const useReaderProgressSync = ({
           clearTimeout(timeoutRef.current);
           timeoutRef.current = null;
         }
-        flush();
+        flushSnapshot();
+        commitTimelineEvent(activeChapterPayloadRef.current);
       }
     });
 
@@ -122,7 +191,8 @@ export const useReaderProgressSync = ({
         clearTimeout(timeoutRef.current);
       }
       timeoutRef.current = null;
-      flush();
+      flushSnapshot();
+      commitTimelineEvent(activeChapterPayloadRef.current);
     };
-  }, [flush]);
+  }, [commitTimelineEvent, flushSnapshot]);
 };
