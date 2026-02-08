@@ -1,0 +1,2 @@
+export { comixAdapter } from "./comixAdapter";
+
