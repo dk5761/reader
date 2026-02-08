@@ -1,4 +1,4 @@
 import type { SourceAdapter } from "../core";
+import { asuraScansAdapter } from "./asurascans";
 
-// Intentionally empty for now. Built-in adapters will be added here.
-export const builtInSourceAdapters: SourceAdapter[] = [];
+export const builtInSourceAdapters: SourceAdapter[] = [asuraScansAdapter];
