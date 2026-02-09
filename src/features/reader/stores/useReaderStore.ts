@@ -195,19 +195,16 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
       } else {
         const hasLoadedNextChapter = activeIndex < state.loadedChapters.length - 1;
         if (hasLoadedNextChapter) {
-          // Keep current + next while the user is transitioning chapters.
-          keptChapters = state.loadedChapters.slice(
-            activeIndex,
-            activeIndex + MAX_VERTICAL_CHAPTERS_IN_MEMORY
-          );
-        } else {
-          // Once current is the latest loaded chapter, keep previous + current.
-          const startIndex = Math.max(
-            0,
-            activeIndex - (MAX_VERTICAL_CHAPTERS_IN_MEMORY - 1)
-          );
-          keptChapters = state.loadedChapters.slice(startIndex, activeIndex + 1);
+          // Defer pruning until the current chapter becomes the latest loaded chapter.
+          // Pruning here would remove items above the viewport and can jump scroll position.
+          return state;
         }
+
+        const startIndex = Math.max(
+          0,
+          activeIndex - (MAX_VERTICAL_CHAPTERS_IN_MEMORY - 1)
+        );
+        keptChapters = state.loadedChapters.slice(startIndex, activeIndex + 1);
 
         if (keptChapters.length > MAX_VERTICAL_CHAPTERS_IN_MEMORY) {
           keptChapters = keptChapters.slice(-MAX_VERTICAL_CHAPTERS_IN_MEMORY);
