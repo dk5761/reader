@@ -6,12 +6,14 @@ export interface BackButtonProps {
   onPress: () => void;
   label?: string;
   variant?: "inline" | "pill";
+  compact?: boolean;
 }
 
 export const BackButton = ({
   onPress,
   label = "Back",
   variant = "inline",
+  compact = false,
 }: BackButtonProps) => {
   const isInline = variant === "inline";
 
@@ -21,7 +23,11 @@ export const BackButton = ({
       hitSlop={8}
       size="sm"
       variant={isInline ? "ghost" : "secondary"}
-      className={isInline ? "mb-3 self-start px-0" : "self-start rounded-full "}
+      className={
+        isInline
+          ? `${compact ? "" : "mb-3 "}self-start px-0`
+          : "self-start rounded-full "
+      }
       pressableFeedbackVariant="none"
     >
       <View className="py-1">

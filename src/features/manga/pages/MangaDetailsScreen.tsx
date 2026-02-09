@@ -1,12 +1,3 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { PressableScale } from "pressto";
-import { useEffect, useMemo, useState } from "react";
-import { FlatList, ListRenderItemInfo, Text, View } from "react-native";
-import { Pressable as GesturePressable } from "react-native-gesture-handler";
-import Swipeable, { type SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import {
   libraryEntryQueryOptions,
   useRemoveLibraryEntryMutation,
@@ -22,19 +13,38 @@ import {
   getSourceChapters,
   getSourceMangaDetails,
   sourceQueryFactory,
+  useSource,
   type SourceChapter,
 } from "@/services/source";
-import { useSource } from "@/services/source";
 import {
   ActionPillButton,
   BackButton,
   CenteredLoadingState,
   CenteredState,
+  CollapsibleText,
 } from "@/shared/ui";
+import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Image } from "expo-image";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { PressableScale } from "pressto";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  FlatList,
+  ListRenderItemInfo,
+  Text,
+  View,
+} from "react-native";
+import { Pressable as GesturePressable } from "react-native-gesture-handler";
+import Swipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
 
 const CHAPTERS_PAGE_SIZE = 50;
 const SWIPE_ACTION_WIDTH = 224;
 const SWIPE_ACTION_COLUMN_WIDTH = 108;
+const SECTION_VISIBILITY_BUFFER = 8;
 
 interface PendingBelowRule {
   anchorIndex: number;
@@ -72,21 +82,41 @@ const formatChapterMeta = (chapter: SourceChapter): string => {
 export default function MangaDetailsScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const params = useLocalSearchParams<{ sourceId?: string | string[]; mangaId?: string | string[] }>();
+  const params = useLocalSearchParams<{
+    sourceId?: string | string[];
+    mangaId?: string | string[];
+  }>();
   const sourceId = getDecodedParam(params.sourceId);
   const mangaId = getDecodedParam(params.mangaId);
 
   const { sources, setSelectedSourceId } = useSource();
   const source = useMemo(
     () => sources.find((entry) => entry.id === sourceId) ?? null,
-    [sourceId, sources]
+    [sourceId, sources],
   );
 
   const [chaptersPage, setChaptersPage] = useState(1);
+  const [sectionABottomOffset, setSectionABottomOffset] = useState(0);
+  const [isSectionAVisible, setIsSectionAVisible] = useState(true);
+  const headerExpandProgress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     setChaptersPage(1);
   }, [mangaId, sourceId]);
+
+  useEffect(() => {
+    setIsSectionAVisible(true);
+    setSectionABottomOffset(0);
+    headerExpandProgress.setValue(0);
+  }, [headerExpandProgress, mangaId, sourceId]);
+
+  useEffect(() => {
+    Animated.timing(headerExpandProgress, {
+      toValue: isSectionAVisible ? 0 : 1,
+      duration: 180,
+      useNativeDriver: false,
+    }).start();
+  }, [headerExpandProgress, isSectionAVisible]);
 
   useEffect(() => {
     if (!source) {
@@ -96,7 +126,10 @@ export default function MangaDetailsScreen() {
   }, [setSelectedSourceId, source]);
 
   const detailsQuery = useQuery({
-    queryKey: sourceQueryFactory.manga(sourceId || "unknown", mangaId || "unknown"),
+    queryKey: sourceQueryFactory.manga(
+      sourceId || "unknown",
+      mangaId || "unknown",
+    ),
     queryFn: ({ signal }) => getSourceMangaDetails(sourceId, mangaId, signal),
     enabled: Boolean(source && sourceId && mangaId),
   });
@@ -105,14 +138,17 @@ export default function MangaDetailsScreen() {
     libraryEntryQueryOptions(
       sourceId || "unknown",
       mangaId || "unknown",
-      Boolean(source && sourceId && mangaId)
-    )
+      Boolean(source && sourceId && mangaId),
+    ),
   );
   const upsertLibraryMutation = useUpsertLibraryEntryMutation();
   const removeLibraryMutation = useRemoveLibraryEntryMutation();
 
   const chaptersQuery = useQuery({
-    queryKey: sourceQueryFactory.chapters(sourceId || "unknown", mangaId || "unknown"),
+    queryKey: sourceQueryFactory.chapters(
+      sourceId || "unknown",
+      mangaId || "unknown",
+    ),
     queryFn: ({ signal }) => getSourceChapters(sourceId, mangaId, signal),
     enabled: Boolean(source && sourceId && mangaId),
   });
@@ -120,19 +156,21 @@ export default function MangaDetailsScreen() {
     latestMangaProgressQueryOptions(
       sourceId || "unknown",
       mangaId || "unknown",
-      Boolean(source && sourceId && mangaId)
-    )
+      Boolean(source && sourceId && mangaId),
+    ),
   );
   const mangaProgressQuery = useQuery(
     mangaReadingProgressQueryOptions(
       sourceId || "unknown",
       mangaId || "unknown",
-      Boolean(source && sourceId && mangaId)
-    )
+      Boolean(source && sourceId && mangaId),
+    ),
   );
   const setChapterReadStateMutation = useSetChapterReadStateMutation();
-  const setBelowChaptersReadStateMutation = useSetBelowChaptersReadStateMutation();
-  const [pendingBelowRule, setPendingBelowRule] = useState<PendingBelowRule | null>(null);
+  const setBelowChaptersReadStateMutation =
+    useSetBelowChaptersReadStateMutation();
+  const [pendingBelowRule, setPendingBelowRule] =
+    useState<PendingBelowRule | null>(null);
 
   const allChapters = useMemo(() => {
     const chapters = chaptersQuery.data ?? [];
@@ -147,27 +185,41 @@ export default function MangaDetailsScreen() {
       return true;
     });
   }, [chaptersQuery.data]);
-  const totalChapterPages = Math.max(1, Math.ceil(allChapters.length / CHAPTERS_PAGE_SIZE));
+  const totalChapterPages = Math.max(
+    1,
+    Math.ceil(allChapters.length / CHAPTERS_PAGE_SIZE),
+  );
   const visibleChapters = useMemo(
     () => allChapters.slice(0, chaptersPage * CHAPTERS_PAGE_SIZE),
-    [allChapters, chaptersPage]
+    [allChapters, chaptersPage],
   );
   const hasMoreChapters = visibleChapters.length < allChapters.length;
   const progressByChapterId = useMemo(
-    () => new Map((mangaProgressQuery.data ?? []).map((entry) => [entry.chapterId, entry])),
-    [mangaProgressQuery.data]
+    () =>
+      new Map(
+        (mangaProgressQuery.data ?? []).map((entry) => [
+          entry.chapterId,
+          entry,
+        ]),
+      ),
+    [mangaProgressQuery.data],
   );
   const effectiveReadByChapterId = useMemo(() => {
     const map = new Map<string, boolean>();
     allChapters.forEach((chapter, index) => {
-      const baseReadState = Boolean(progressByChapterId.get(chapter.id)?.isCompleted);
+      const baseReadState = Boolean(
+        progressByChapterId.get(chapter.id)?.isCompleted,
+      );
       if (!pendingBelowRule) {
         map.set(chapter.id, baseReadState);
         return;
       }
 
       const isBelowPendingAnchor = index > pendingBelowRule.anchorIndex;
-      map.set(chapter.id, isBelowPendingAnchor ? pendingBelowRule.targetReadState : baseReadState);
+      map.set(
+        chapter.id,
+        isBelowPendingAnchor ? pendingBelowRule.targetReadState : baseReadState,
+      );
     });
     return map;
   }, [allChapters, pendingBelowRule, progressByChapterId]);
@@ -187,17 +239,21 @@ export default function MangaDetailsScreen() {
     return result;
   }, [allChapters, effectiveReadByChapterId]);
   const isReadStateMutationPending =
-    setChapterReadStateMutation.isPending || setBelowChaptersReadStateMutation.isPending;
+    setChapterReadStateMutation.isPending ||
+    setBelowChaptersReadStateMutation.isPending;
 
   useEffect(() => {
     setPendingBelowRule(null);
   }, [mangaId, sourceId]);
 
   const handleBackDuringLoading = () => {
-    const mangaQueryKey = sourceQueryFactory.manga(sourceId || "unknown", mangaId || "unknown");
+    const mangaQueryKey = sourceQueryFactory.manga(
+      sourceId || "unknown",
+      mangaId || "unknown",
+    );
     const chaptersQueryKey = sourceQueryFactory.chapters(
       sourceId || "unknown",
-      mangaId || "unknown"
+      mangaId || "unknown",
     );
 
     void queryClient.cancelQueries({ queryKey: mangaQueryKey });
@@ -226,15 +282,22 @@ export default function MangaDetailsScreen() {
         <View className="px-4 pb-2 pt-2">
           <BackButton onPress={handleBackDuringLoading} />
         </View>
-        <CenteredLoadingState withBackground={false} message="Loading manga details..." />
+        <CenteredLoadingState
+          withBackground={false}
+          message="Loading manga details..."
+        />
       </View>
     );
   }
 
   if (detailsQuery.isError || chaptersQuery.isError || !detailsQuery.data) {
-    const errorMessage = detailsQuery.error?.message ?? chaptersQuery.error?.message;
+    const errorMessage =
+      detailsQuery.error?.message ?? chaptersQuery.error?.message;
     return (
-      <CenteredState title="Could not load manga" message={errorMessage ?? "Unknown error."}>
+      <CenteredState
+        title="Could not load manga"
+        message={errorMessage ?? "Unknown error."}
+      >
         <Stack.Screen options={{ headerShown: false }} />
         <View className="mt-4 flex-row gap-2">
           <ActionPillButton
@@ -255,19 +318,41 @@ export default function MangaDetailsScreen() {
   const latestProgress = latestProgressQuery.data;
   const isLibraryMutationPending =
     upsertLibraryMutation.isPending || removeLibraryMutation.isPending;
+  const headerPaddingBottom = headerExpandProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 8],
+  });
+  const titleOpacity = headerExpandProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 1],
+  });
+  const titleHeight = headerExpandProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 24],
+  });
+  const titleMarginTop = headerExpandProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 4],
+  });
 
-  const renderChapterItem = ({ item, index }: ListRenderItemInfo<SourceChapter>) => {
+  const renderChapterItem = ({
+    item,
+    index,
+  }: ListRenderItemInfo<SourceChapter>) => {
     const isChapterRead = Boolean(effectiveReadByChapterId.get(item.id));
     const hasBelowChapters = index < allChapters.length - 1;
-    const allBelowRead = hasBelowChapters ? Boolean(areAllBelowReadByIndex[index]) : false;
+    const allBelowRead = hasBelowChapters
+      ? Boolean(areAllBelowReadByIndex[index])
+      : false;
     const shouldMarkBelowAsRead = hasBelowChapters ? !allBelowRead : false;
     const belowChapterInputs = hasBelowChapters
       ? allChapters
           .slice(index + 1)
           .filter((chapter, chapterIndex, chapterArray) => {
             return (
-              chapterArray.findIndex((candidate) => candidate.id === chapter.id) ===
-              chapterIndex
+              chapterArray.findIndex(
+                (candidate) => candidate.id === chapter.id,
+              ) === chapterIndex
             );
           })
           .map((chapter) => ({
@@ -331,7 +416,7 @@ export default function MangaDetailsScreen() {
               return null;
             });
           },
-        }
+        },
       );
     };
 
@@ -381,7 +466,11 @@ export default function MangaDetailsScreen() {
                   style={{ width: SWIPE_ACTION_COLUMN_WIDTH }}
                   className="h-full items-center justify-center rounded-xl bg-[#2A2D36] px-3 py-3"
                 >
-                  <Ionicons name="arrow-down-circle-outline" size={18} color="#FFFFFF" />
+                  <Ionicons
+                    name="arrow-down-circle-outline"
+                    size={18}
+                    color="#FFFFFF"
+                  />
                   <Text className="mt-1 text-center text-xs font-semibold text-white">
                     {shouldMarkBelowAsRead
                       ? "Mark Below as Read"
@@ -394,7 +483,11 @@ export default function MangaDetailsScreen() {
                 style={{ width: SWIPE_ACTION_COLUMN_WIDTH }}
                 className="h-full items-center justify-center rounded-xl bg-[#1A1B1E]"
               >
-                <Ionicons name="remove-circle-outline" size={18} color="#7E808A" />
+                <Ionicons
+                  name="remove-circle-outline"
+                  size={18}
+                  color="#7E808A"
+                />
                 <Text className="mt-1 text-center text-xs font-semibold text-[#7E808A]">
                   No Below
                 </Text>
@@ -407,7 +500,8 @@ export default function MangaDetailsScreen() {
           <GesturePressable
             hitSlop={4}
             onPress={() => {
-              const shouldResumeCurrentChapter = latestProgress?.chapterId === item.id;
+              const shouldResumeCurrentChapter =
+                latestProgress?.chapterId === item.id;
               router.push({
                 pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
                 params: {
@@ -423,7 +517,9 @@ export default function MangaDetailsScreen() {
           >
             <View>
               <View className="flex-row items-start justify-between gap-2">
-                <Text className="flex-1 text-sm font-medium text-white">{item.title}</Text>
+                <Text className="flex-1 text-sm font-medium text-white">
+                  {item.title}
+                </Text>
                 <View
                   className={`rounded-full px-2 py-0.5 ${
                     isChapterRead
@@ -442,7 +538,9 @@ export default function MangaDetailsScreen() {
               </View>
 
               {formatChapterMeta(item) ? (
-                <Text className="mt-1 text-xs text-[#9B9CA6]">{formatChapterMeta(item)}</Text>
+                <Text className="mt-1 text-xs text-[#9B9CA6]">
+                  {formatChapterMeta(item)}
+                </Text>
               ) : null}
             </View>
           </GesturePressable>
@@ -455,17 +553,60 @@ export default function MangaDetailsScreen() {
     <View className="flex-1 bg-[#111214]">
       <Stack.Screen options={{ headerShown: false }} />
 
+      <Animated.View
+        className="border-b border-[#1E2024] bg-[#111214] px-4"
+        style={{ paddingBottom: headerPaddingBottom }}
+      >
+        <BackButton onPress={() => router.back()} compact />
+        <Animated.View
+          style={{
+            marginTop: titleMarginTop,
+            height: titleHeight,
+            opacity: titleOpacity,
+            overflow: "hidden",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            numberOfLines={1}
+            className="text-base font-semibold text-white"
+          >
+            {details.title}
+          </Text>
+        </Animated.View>
+      </Animated.View>
+
       <FlatList
         data={visibleChapters}
         keyExtractor={(item, index) => `${item.id}::${item.url || index}`}
         renderItem={renderChapterItem}
         contentContainerClassName="px-4 pb-8"
         ItemSeparatorComponent={() => <View className="h-2" />}
-        ListHeaderComponent={
-          <View className="pb-4 pt-2">
-            <BackButton onPress={() => router.back()} />
+        onScroll={(event) => {
+          if (sectionABottomOffset <= 0) {
+            return;
+          }
 
-            <View className="flex-row gap-3">
+          const offsetY = event.nativeEvent.contentOffset.y;
+          const nextSectionAVisible =
+            offsetY + SECTION_VISIBILITY_BUFFER < sectionABottomOffset;
+          if (nextSectionAVisible !== isSectionAVisible) {
+            setIsSectionAVisible(nextSectionAVisible);
+          }
+        }}
+        scrollEventThrottle={16}
+        ListHeaderComponent={
+          <View className="pb-4 pt-3">
+            <View
+              className="flex-row gap-3"
+              onLayout={(event) => {
+                const { y, height } = event.nativeEvent.layout;
+                const nextBottomOffset = y + height;
+                if (nextBottomOffset !== sectionABottomOffset) {
+                  setSectionABottomOffset(nextBottomOffset);
+                }
+              }}
+            >
               <View className="w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">
                 <View style={{ aspectRatio: 2 / 3 }}>
                   {details.thumbnailUrl ? (
@@ -483,8 +624,12 @@ export default function MangaDetailsScreen() {
               </View>
 
               <View className="flex-1">
-                <Text className="text-xl font-bold text-white">{details.title}</Text>
-                <Text className="mt-1 text-xs text-[#9B9CA6]">{source.name}</Text>
+                <Text className="text-xl font-bold text-white">
+                  {details.title}
+                </Text>
+                <Text className="mt-1 text-xs text-[#9B9CA6]">
+                  {source.name}
+                </Text>
                 <View className="mt-3 self-start">
                   <View className="flex-row flex-wrap gap-2">
                     <ActionPillButton
@@ -527,7 +672,8 @@ export default function MangaDetailsScreen() {
                         label="Continue"
                         onPress={() => {
                           router.push({
-                            pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
+                            pathname:
+                              "/reader/[sourceId]/[mangaId]/[chapterId]",
                             params: {
                               sourceId,
                               mangaId,
@@ -554,9 +700,11 @@ export default function MangaDetailsScreen() {
             </View>
 
             {details.description ? (
-              <Text className="mt-4 text-sm leading-6 text-[#D0D1D8]">
-                {details.description}
-              </Text>
+              <CollapsibleText
+                text={details.description}
+                collapsedLines={3}
+                textClassName="mt-4 text-sm leading-6 text-[#D0D1D8]"
+              />
             ) : null}
 
             {details.genres?.length ? (
@@ -575,7 +723,8 @@ export default function MangaDetailsScreen() {
             <View className="mt-5 flex-row items-end justify-between">
               <Text className="text-lg font-semibold text-white">Chapters</Text>
               <Text className="text-xs text-[#8B8D98]">
-                Page {Math.min(chaptersPage, totalChapterPages)} of {totalChapterPages}
+                Page {Math.min(chaptersPage, totalChapterPages)} of{" "}
+                {totalChapterPages}
               </Text>
             </View>
             <Text className="mt-1 text-xs text-[#9B9CA6]">
@@ -592,17 +741,23 @@ export default function MangaDetailsScreen() {
                 }}
               >
                 <View className="items-center rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-3">
-                  <Text className="text-sm font-medium text-white">Load More Chapters</Text>
+                  <Text className="text-sm font-medium text-white">
+                    Load More Chapters
+                  </Text>
                 </View>
               </PressableScale>
             </View>
           ) : allChapters.length > 0 ? (
             <View className="items-center pt-4">
-              <Text className="text-xs text-[#8B8D98]">All chapters loaded</Text>
+              <Text className="text-xs text-[#8B8D98]">
+                All chapters loaded
+              </Text>
             </View>
           ) : (
             <View className="items-center pt-4">
-              <Text className="text-xs text-[#9B9CA6]">No chapters available.</Text>
+              <Text className="text-xs text-[#9B9CA6]">
+                No chapters available.
+              </Text>
             </View>
           )
         }
