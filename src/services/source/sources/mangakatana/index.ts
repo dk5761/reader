@@ -1,0 +1,2 @@
+export { mangaKatanaAdapter } from "./mangaKatanaAdapter";
+
