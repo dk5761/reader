@@ -246,11 +246,44 @@ export default function ReaderScreen() {
     }
 
     const nextChapterId = chapterFlow.nextChapter.id;
-    const didLoad = await chapterFlow.loadNextChapter();
-    if (didLoad) {
+    const loadedChapter = await chapterFlow.loadNextChapter();
+    if (loadedChapter && loadedChapter.id === nextChapterId) {
       setCurrentHorizontalPosition(nextChapterId, 0);
     }
   }, [chapterFlow, setCurrentHorizontalPosition]);
+
+  const handleVerticalNearEnd = useCallback(async () => {
+    if (mode !== "vertical") {
+      return;
+    }
+
+    const originChapterId = useReaderStore.getState().currentChapterId;
+    if (!originChapterId) {
+      return;
+    }
+
+    const loadedChapter = await chapterFlow.loadNextChapter();
+    if (!loadedChapter) {
+      return;
+    }
+
+    const latestState = useReaderStore.getState();
+    if (
+      latestState.currentChapterId !== originChapterId &&
+      latestState.currentChapterId !== loadedChapter.id
+    ) {
+      return;
+    }
+
+    const targetFlatIndex = latestState.flatPages.findIndex(
+      (entry) => entry.chapterId === loadedChapter.id && entry.pageIndex === 0
+    );
+
+    if (targetFlatIndex >= 0) {
+      setCurrentFlatIndex(targetFlatIndex);
+      setRequestedFlatIndex(targetFlatIndex);
+    }
+  }, [chapterFlow, mode, setCurrentFlatIndex]);
 
   const pageMetrics = useMemo<ReaderPageMetrics>(() => {
     if (mode === "vertical") {
@@ -418,7 +451,7 @@ export default function ReaderScreen() {
             }
           }}
           onNearEnd={() => {
-            void chapterFlow.loadNextChapter();
+            void handleVerticalNearEnd();
           }}
           onTapPage={toggleOverlay}
           onScrollBeginDrag={hideOverlay}

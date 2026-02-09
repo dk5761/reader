@@ -1,6 +1,6 @@
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import { ViewToken } from "react-native";
+import { NativeScrollEvent, NativeSyntheticEvent, ViewToken } from "react-native";
 import type { ReaderFlatPage } from "../types/reader.types";
 import { ReaderPageItem } from "./ReaderPageItem";
 
@@ -26,6 +26,7 @@ export const ReaderVerticalList = ({
   const listRef = useRef<FlashListRef<ReaderFlatPage> | null>(null);
   const lastVisibleIndexRef = useRef<number>(-1);
   const lastRequestedIndexRef = useRef<number | null>(null);
+  const lastNearEndTokenRef = useRef<string | null>(null);
 
   const safeInitialIndex = useMemo(() => {
     if (pages.length === 0) {
@@ -100,6 +101,32 @@ export const ReaderVerticalList = ({
     };
   }, [pages.length, requestedFlatIndex]);
 
+  useEffect(() => {
+    lastNearEndTokenRef.current = null;
+  }, [pages.length]);
+
+  const maybeTriggerNearEnd = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const distanceFromEnd =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+
+      // Fallback for cases where FlashList onEndReached is missed on initial loads.
+      if (distanceFromEnd > 96) {
+        return;
+      }
+
+      const token = `${pages.length}:${Math.max(0, Math.floor(contentOffset.y))}`;
+      if (lastNearEndTokenRef.current === token) {
+        return;
+      }
+
+      lastNearEndTokenRef.current = token;
+      onNearEnd();
+    },
+    [onNearEnd, pages.length]
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ReaderFlatPage }) => (
       <ReaderPageItem
@@ -122,6 +149,8 @@ export const ReaderVerticalList = ({
       viewabilityConfig={{ viewAreaCoveragePercentThreshold: 15 }}
       onEndReachedThreshold={0.5}
       onEndReached={onNearEnd}
+      onMomentumScrollEnd={maybeTriggerNearEnd}
+      onScrollEndDrag={maybeTriggerNearEnd}
       onScrollBeginDrag={onScrollBeginDrag}
       scrollEventThrottle={120}
       showsVerticalScrollIndicator={false}

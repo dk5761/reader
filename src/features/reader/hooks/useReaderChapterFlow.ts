@@ -84,11 +84,11 @@ export const useReaderChapterFlow = ({
 
   const loadNextChapter = useCallback(async () => {
     if (!nextChapter || !sourceId || isLoadingNextChapter) {
-      return false;
+      return null;
     }
 
     if (loadedChapterIdsInMemory.includes(nextChapter.id)) {
-      return false;
+      return null;
     }
 
     try {
@@ -96,12 +96,12 @@ export const useReaderChapterFlow = ({
       setNextChapterError(null);
       const pages = await prefetchReaderChapterPages(queryClient, sourceId, nextChapter.id);
       onAppendChapter(nextChapter, pages);
-      return true;
+      return nextChapter;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not load the next chapter.";
       setNextChapterError(message);
-      return false;
+      return null;
     } finally {
       setIsLoadingNextChapter(false);
     }
