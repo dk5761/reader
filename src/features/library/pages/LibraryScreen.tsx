@@ -58,6 +58,7 @@ export default function LibraryTabScreen() {
         </CenteredState>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={libraryEntries}
           keyExtractor={(item) => `${item.sourceId}::${item.mangaId}`}
           contentContainerClassName="px-4 pb-8"

@@ -109,6 +109,12 @@ export const appSettings = sqliteTable("app_settings", {
   updatedAt: integer("updated_at").notNull(),
 });
 
+export const globalSearchSettings = sqliteTable("global_search_settings", {
+  id: integer("id").primaryKey(),
+  selectedSourceIdsJson: text("selected_source_ids_json").notNull().default("[]"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const libraryUpdateState = sqliteTable(
   "library_update_state",
   {
@@ -166,5 +172,6 @@ export type ReadingProgressRow = typeof readingProgress.$inferSelect;
 export type ReadingHistoryRow = typeof readingHistory.$inferSelect;
 export type ReadingHistoryEventRow = typeof readingHistoryEvents.$inferSelect;
 export type AppSettingsRow = typeof appSettings.$inferSelect;
+export type GlobalSearchSettingsRow = typeof globalSearchSettings.$inferSelect;
 export type LibraryUpdateStateRow = typeof libraryUpdateState.$inferSelect;
 export type LibraryUpdateEventRow = typeof libraryUpdateEvents.$inferSelect;

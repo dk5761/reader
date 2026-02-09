@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
+import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useSource } from "@/services/source";
-import { CenteredState, ScreenHeader } from "@/shared/ui";
+import { ScreenHeader } from "@/shared/ui";
+import { GlobalSearchPanel } from "../components";
 
 const getHostLabel = (baseUrl: string): string => {
   try {
@@ -16,6 +18,7 @@ const getHostLabel = (baseUrl: string): string => {
 export default function BrowseTabScreen() {
   const router = useRouter();
   const { sources } = useSource();
+  const [isGlobalSearchActive, setIsGlobalSearchActive] = useState(false);
 
   return (
     <View className="flex-1 bg-[#111214]">
@@ -26,46 +29,53 @@ export default function BrowseTabScreen() {
         />
       </View>
 
-      {sources.length === 0 ? (
-        <CenteredState
-          withBackground={false}
-          title="No adapters found"
-          message="Register at least one source adapter to start browsing."
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerClassName="px-4 pb-8"
+      >
+        <GlobalSearchPanel
+          sources={sources}
+          onSearchActiveChange={setIsGlobalSearchActive}
         />
-      ) : (
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerClassName="px-4 pb-8"
-        >
-          <View className="gap-3">
-            {sources.map((source) => (
-              <PressableScale
-                key={source.id}
-                onPress={() => {
-                  router.push({
-                    pathname: "/source/[sourceId]",
-                    params: { sourceId: source.id },
-                  });
-                }}
-              >
-                <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-1 pr-3">
-                      <Text className="text-lg font-semibold text-white">{source.name}</Text>
-                      <Text className="mt-1 text-xs text-[#8B8D98]">{source.id}</Text>
-                      <Text className="mt-1 text-sm text-[#B5B6BF]">
-                        {getHostLabel(source.baseUrl)}
-                      </Text>
-                    </View>
 
-                    <Ionicons name="chevron-forward" size={20} color="#8B8D98" />
+        {!isGlobalSearchActive ? (
+          sources.length === 0 ? (
+            <View className="items-center py-10">
+              <Text className="text-center text-sm text-[#9B9CA6]">
+                No adapters found. Register at least one source adapter to start browsing.
+              </Text>
+            </View>
+          ) : (
+            <View className="mt-3 gap-3">
+              {sources.map((source) => (
+                <PressableScale
+                  key={source.id}
+                  onPress={() => {
+                    router.push({
+                      pathname: "/source/[sourceId]",
+                      params: { sourceId: source.id },
+                    });
+                  }}
+                >
+                  <View className="rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4">
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-1 pr-3">
+                        <Text className="text-lg font-semibold text-white">{source.name}</Text>
+                        <Text className="mt-1 text-xs text-[#8B8D98]">{source.id}</Text>
+                        <Text className="mt-1 text-sm text-[#B5B6BF]">
+                          {getHostLabel(source.baseUrl)}
+                        </Text>
+                      </View>
+
+                      <Ionicons name="chevron-forward" size={20} color="#8B8D98" />
+                    </View>
                   </View>
-                </View>
-              </PressableScale>
-            ))}
-          </View>
-        </ScrollView>
-      )}
+                </PressableScale>
+              ))}
+            </View>
+          )
+        ) : null}
+      </ScrollView>
     </View>
   );
 }

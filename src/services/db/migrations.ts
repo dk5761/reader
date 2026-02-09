@@ -91,6 +91,15 @@ CREATE TABLE IF NOT EXISTS app_settings (
 INSERT OR IGNORE INTO app_settings (id, allow_nsfw_sources, default_reader_mode, updated_at)
 VALUES (1, 0, 'vertical', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
 
+CREATE TABLE IF NOT EXISTS global_search_settings (
+  id INTEGER PRIMARY KEY NOT NULL,
+  selected_source_ids_json TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO global_search_settings (id, selected_source_ids_json, updated_at)
+VALUES (1, '[]', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+
 CREATE TABLE IF NOT EXISTS library_update_state (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   source_id TEXT NOT NULL,

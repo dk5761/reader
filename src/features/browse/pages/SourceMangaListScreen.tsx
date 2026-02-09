@@ -40,16 +40,16 @@ const modeLabelMap: Record<BrowseMode, string> = {
   search: "Search",
 };
 
-const getDecodedSourceId = (value: string | string[] | undefined): string => {
-  const sourceId = Array.isArray(value) ? value[0] : value;
-  if (!sourceId) {
+const getDecodedParam = (value: string | string[] | undefined): string => {
+  const param = Array.isArray(value) ? value[0] : value;
+  if (!param) {
     return "";
   }
 
   try {
-    return decodeURIComponent(sourceId);
+    return decodeURIComponent(param);
   } catch {
-    return sourceId;
+    return param;
   }
 };
 
@@ -106,8 +106,14 @@ export default function SourceMangaListScreen() {
   const queryClient = useQueryClient();
   const { width: screenWidth } = useWindowDimensions();
   const router = useRouter();
-  const params = useLocalSearchParams<{ sourceId?: string | string[] }>();
-  const routeSourceId = getDecodedSourceId(params.sourceId);
+  const params = useLocalSearchParams<{
+    sourceId?: string | string[];
+    mode?: string | string[];
+    q?: string | string[];
+  }>();
+  const routeSourceId = getDecodedParam(params.sourceId);
+  const routeModeParam = getDecodedParam(params.mode);
+  const routeQueryParam = getDecodedParam(params.q).trim();
 
   const { sources, setSelectedSourceId } = useSource();
   const source = useMemo(
@@ -144,8 +150,19 @@ export default function SourceMangaListScreen() {
   );
 
   useEffect(() => {
+    const isRouteSearch = routeModeParam === "search" && routeQueryParam.length > 0;
+
+    if (supportsSearch && isRouteSearch) {
+      setMode("search");
+      setSearchInput(routeQueryParam);
+      setDebouncedQuery(routeQueryParam);
+      return;
+    }
+
     setMode(defaultBrowseMode);
-  }, [defaultBrowseMode, routeSourceId]);
+    setSearchInput("");
+    setDebouncedQuery("");
+  }, [defaultBrowseMode, routeModeParam, routeQueryParam, routeSourceId, supportsSearch]);
 
   useEffect(() => {
     if (!supportsSearch) {
@@ -323,99 +340,102 @@ export default function SourceMangaListScreen() {
         ) : null}
       </View>
 
-      {isSearchIdle ? (
-        <CenteredState
-          withBackground={false}
-          message="Enter a title to start searching."
-        />
-      ) : mangaQuery.isPending ? (
-        <CenteredLoadingState
-          withBackground={false}
-          message="Loading manga..."
-        />
-      ) : mangaQuery.isError ? (
-        <CenteredState
-          withBackground={false}
-          title="Could not load manga list"
-          message={mangaQuery.error.message}
-        >
-          <View className="mt-4">
-            <ActionPillButton
-              label="Retry"
-              onPress={() => {
-                void mangaQuery.refetch();
-              }}
-            />
-          </View>
-        </CenteredState>
-      ) : (
-        <FlatList
-          data={mangaItems}
-          numColumns={GRID_COLUMNS}
-          keyExtractor={(item) => item.id}
-          contentContainerClassName="px-4 pb-8"
-          columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
-          ItemSeparatorComponent={() => <View className="h-4" />}
-          renderItem={({ item }) => (
-            <PressableScale
-              style={{ width: gridItemWidth }}
-              onPress={() => {
-                router.push({
-                  pathname: "/manga/[sourceId]/[mangaId]",
-                  params: {
-                    sourceId: routeSourceId,
-                    mangaId: item.id,
-                  },
-                });
-              }}
-            >
-              <View className="pb-2">
-                <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
-                  <View style={{ aspectRatio: 2 / 3 }}>
-                    {item.thumbnailUrl ? (
-                      <Image
-                        source={{ uri: item.thumbnailUrl }}
-                        contentFit="cover"
-                        style={{ width: "100%", height: "100%" }}
-                        transition={120}
-                      />
-                    ) : (
-                      <View className="h-full w-full items-center justify-center">
-                        <Text className="text-xs text-[#6D6E78]">No cover</Text>
-                      </View>
-                    )}
+      <View className="flex-1">
+        {isSearchIdle ? (
+          <CenteredState
+            withBackground={false}
+            message="Enter a title to start searching."
+          />
+        ) : mangaQuery.isPending ? (
+          <CenteredLoadingState
+            withBackground={false}
+            message="Loading manga..."
+          />
+        ) : mangaQuery.isError ? (
+          <CenteredState
+            withBackground={false}
+            title="Could not load manga list"
+            message={mangaQuery.error.message}
+          >
+            <View className="mt-4">
+              <ActionPillButton
+                label="Retry"
+                onPress={() => {
+                  void mangaQuery.refetch();
+                }}
+              />
+            </View>
+          </CenteredState>
+        ) : (
+          <FlatList
+            style={{ flex: 1 }}
+            data={mangaItems}
+            numColumns={GRID_COLUMNS}
+            keyExtractor={(item) => item.id}
+            contentContainerClassName="px-4 pb-8"
+            columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
+            ItemSeparatorComponent={() => <View className="h-4" />}
+            renderItem={({ item }) => (
+              <PressableScale
+                style={{ width: gridItemWidth }}
+                onPress={() => {
+                  router.push({
+                    pathname: "/manga/[sourceId]/[mangaId]",
+                    params: {
+                      sourceId: routeSourceId,
+                      mangaId: item.id,
+                    },
+                  });
+                }}
+              >
+                <View className="pb-2">
+                  <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
+                    <View style={{ aspectRatio: 2 / 3 }}>
+                      {item.thumbnailUrl ? (
+                        <Image
+                          source={{ uri: item.thumbnailUrl }}
+                          contentFit="cover"
+                          style={{ width: "100%", height: "100%" }}
+                          transition={120}
+                        />
+                      ) : (
+                        <View className="h-full w-full items-center justify-center">
+                          <Text className="text-xs text-[#6D6E78]">No cover</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
+                  <Text
+                    numberOfLines={2}
+                    className="mt-2 pr-1 text-xs font-medium leading-5 text-[#D8D9E0]"
+                  >
+                    {item.title}
+                  </Text>
                 </View>
-                <Text
-                  numberOfLines={2}
-                  className="mt-2 pr-1 text-xs font-medium leading-5 text-[#D8D9E0]"
-                >
-                  {item.title}
-                </Text>
-              </View>
-            </PressableScale>
-          )}
-          onEndReachedThreshold={0.5}
-          onEndReached={() => {
-            if (mangaQuery.hasNextPage && !mangaQuery.isFetchingNextPage) {
-              void mangaQuery.fetchNextPage();
+              </PressableScale>
+            )}
+            onEndReachedThreshold={0.5}
+            onEndReached={() => {
+              if (mangaQuery.hasNextPage && !mangaQuery.isFetchingNextPage) {
+                void mangaQuery.fetchNextPage();
+              }
+            }}
+            ListFooterComponent={
+              mangaQuery.isFetchingNextPage ? (
+                <View className="items-center py-4">
+                  <ActivityIndicator color="#67A4FF" />
+                </View>
+              ) : mangaItems.length === 0 ? (
+                <View className="items-center py-10">
+                  <Text className="text-sm text-[#9B9CA6]">
+                    No manga found for this source.
+                  </Text>
+                </View>
+              ) : null
             }
-          }}
-          ListFooterComponent={
-            mangaQuery.isFetchingNextPage ? (
-              <View className="items-center py-4">
-                <ActivityIndicator color="#67A4FF" />
-              </View>
-            ) : mangaItems.length === 0 ? (
-              <View className="items-center py-10">
-                <Text className="text-sm text-[#9B9CA6]">
-                  No manga found for this source.
-                </Text>
-              </View>
-            ) : null
-          }
-        />
-      )}
+          />
+        )}
+      </View>
     </View>
   );
 }

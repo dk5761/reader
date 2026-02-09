@@ -577,6 +577,7 @@ export default function MangaDetailsScreen() {
       </Animated.View>
 
       <FlatList
+        style={{ flex: 1 }}
         data={visibleChapters}
         keyExtractor={(item, index) => `${item.id}::${item.url || index}`}
         renderItem={renderChapterItem}
