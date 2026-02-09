@@ -39,6 +39,11 @@ const resolveNextChapter = (
     if (nextByNumber) {
       return nextByNumber;
     }
+
+    // For numeric chapter flows, reaching here means there is no higher chapter.
+    // Do not fallback by array index, because many sources return chapters in
+    // descending order (latest -> oldest), which would incorrectly move backward.
+    return null;
   }
 
   for (let index = currentIndex + 1; index < chapters.length; index += 1) {
