@@ -22,6 +22,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS library_entries_source_manga_unique
 CREATE INDEX IF NOT EXISTS library_entries_updated_at_idx
   ON library_entries (updated_at);
 
+CREATE TABLE IF NOT EXISTS library_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  name TEXT NOT NULL,
+  normalized_name TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS library_categories_normalized_name_unique
+  ON library_categories (normalized_name);
+
+CREATE INDEX IF NOT EXISTS library_categories_position_idx
+  ON library_categories (position);
+
+CREATE TABLE IF NOT EXISTS library_entry_categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  library_entry_id INTEGER NOT NULL,
+  category_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS library_entry_categories_entry_category_unique
+  ON library_entry_categories (library_entry_id, category_id);
+
+CREATE INDEX IF NOT EXISTS library_entry_categories_category_idx
+  ON library_entry_categories (category_id);
+
+CREATE INDEX IF NOT EXISTS library_entry_categories_entry_idx
+  ON library_entry_categories (library_entry_id);
+
+CREATE TABLE IF NOT EXISTS library_view_settings (
+  id INTEGER PRIMARY KEY NOT NULL,
+  active_category_id INTEGER,
+  sort_key TEXT NOT NULL DEFAULT 'updatedAt',
+  sort_direction TEXT NOT NULL DEFAULT 'desc',
+  status_filter TEXT NOT NULL DEFAULT 'all',
+  source_filter_json TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO library_view_settings (
+  id,
+  active_category_id,
+  sort_key,
+  sort_direction,
+  status_filter,
+  source_filter_json,
+  updated_at
+)
+VALUES (1, NULL, 'updatedAt', 'desc', 'all', '[]', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+
 CREATE TABLE IF NOT EXISTS reading_progress (
   id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   source_id TEXT NOT NULL,

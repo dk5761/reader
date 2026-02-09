@@ -21,6 +21,50 @@ export const libraryEntries = sqliteTable(
   ]
 );
 
+export const libraryCategories = sqliteTable(
+  "library_categories",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    normalizedName: text("normalized_name").notNull(),
+    position: integer("position").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("library_categories_normalized_name_unique").on(table.normalizedName),
+    index("library_categories_position_idx").on(table.position),
+  ]
+);
+
+export const libraryEntryCategories = sqliteTable(
+  "library_entry_categories",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    libraryEntryId: integer("library_entry_id").notNull(),
+    categoryId: integer("category_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("library_entry_categories_entry_category_unique").on(
+      table.libraryEntryId,
+      table.categoryId
+    ),
+    index("library_entry_categories_category_idx").on(table.categoryId),
+    index("library_entry_categories_entry_idx").on(table.libraryEntryId),
+  ]
+);
+
+export const libraryViewSettings = sqliteTable("library_view_settings", {
+  id: integer("id").primaryKey(),
+  activeCategoryId: integer("active_category_id"),
+  sortKey: text("sort_key").notNull().default("updatedAt"),
+  sortDirection: text("sort_direction").notNull().default("desc"),
+  statusFilter: text("status_filter").notNull().default("all"),
+  sourceFilterJson: text("source_filter_json").notNull().default("[]"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export const readingProgress = sqliteTable(
   "reading_progress",
   {
@@ -168,6 +212,9 @@ export const libraryUpdateEvents = sqliteTable(
 );
 
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
+export type LibraryCategoryRow = typeof libraryCategories.$inferSelect;
+export type LibraryEntryCategoryRow = typeof libraryEntryCategories.$inferSelect;
+export type LibraryViewSettingsRow = typeof libraryViewSettings.$inferSelect;
 export type ReadingProgressRow = typeof readingProgress.$inferSelect;
 export type ReadingHistoryRow = typeof readingHistory.$inferSelect;
 export type ReadingHistoryEventRow = typeof readingHistoryEvents.$inferSelect;
