@@ -129,16 +129,68 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
 
   appendChapterPages: (chapter, pages) => {
     set((state) => {
-      if (state.loadedChapters.some((loaded) => loaded.chapter.id === chapter.id)) {
+      const existingChapterIndex = state.loadedChapters.findIndex(
+        (loaded) => loaded.chapter.id === chapter.id
+      );
+      if (existingChapterIndex >= 0) {
+        const existingChapter = state.loadedChapters[existingChapterIndex];
         const hasTrackedId = state.loadedChapterIdsSet.includes(chapter.id);
-        if (hasTrackedId) {
-          return state;
+        const canReplacePages = pages.length > 0;
+        const hasDifferentPages =
+          existingChapter.pages.length !== pages.length ||
+          existingChapter.pages.some(
+            (page, index) =>
+              page.index !== pages[index]?.index || page.imageUrl !== pages[index]?.imageUrl
+          );
+
+        if (!canReplacePages || !hasDifferentPages) {
+          if (hasTrackedId) {
+            return state;
+          }
+
+          return {
+            ...state,
+            loadedChapterIdsSet: [...state.loadedChapterIdsSet, chapter.id],
+          };
+        }
+
+        const currentEntry = state.flatPages[state.currentFlatIndex];
+        const loadedChapters = state.loadedChapters.map((loadedChapter, index) =>
+          index === existingChapterIndex ? { chapter, pages } : loadedChapter
+        );
+        const flatPages = flattenLoadedChapters(loadedChapters);
+        const loadedChapterIdsSet = hasTrackedId
+          ? state.loadedChapterIdsSet
+          : [...state.loadedChapterIdsSet, chapter.id];
+
+        let nextFlatIndex = state.currentFlatIndex;
+        if (currentEntry) {
+          const remappedIndex = flatPages.findIndex(
+            (entry) =>
+              entry.chapterId === currentEntry.chapterId &&
+              entry.pageIndex === currentEntry.pageIndex
+          );
+          if (remappedIndex >= 0) {
+            nextFlatIndex = remappedIndex;
+          } else if (flatPages.length > 0) {
+            nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
+          }
+        } else if (flatPages.length > 0) {
+          nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
         }
 
         return {
           ...state,
-          loadedChapterIdsSet: [...state.loadedChapterIdsSet, chapter.id],
+          loadedChapters,
+          loadedChapterIdsSet,
+          flatPages,
+          currentFlatIndex: nextFlatIndex,
         };
+      }
+
+      const hasTrackedId = state.loadedChapterIdsSet.includes(chapter.id);
+      if (hasTrackedId && pages.length === 0) {
+        return state;
       }
 
       const currentEntry = state.flatPages[state.currentFlatIndex];

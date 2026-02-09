@@ -74,16 +74,25 @@ export const ReaderVerticalList = ({
       return;
     }
 
-    lastRequestedIndexRef.current = safeRequestedIndex;
-
     const frame = requestAnimationFrame(() => {
       const scrollPromise = listRef.current?.scrollToIndex({
         index: safeRequestedIndex,
         animated: false,
       });
-      if (scrollPromise) {
-        void scrollPromise.catch(() => undefined);
+
+      if (!scrollPromise) {
+        lastRequestedIndexRef.current = safeRequestedIndex;
+        return;
       }
+
+      void scrollPromise
+        .then(() => {
+          lastRequestedIndexRef.current = safeRequestedIndex;
+        })
+        .catch(() => {
+          // Allow re-attempts for the same target index on transient layout failures.
+          lastRequestedIndexRef.current = null;
+        });
     });
 
     return () => {

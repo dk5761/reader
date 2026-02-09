@@ -35,10 +35,16 @@ export const ReaderHorizontalPager = ({
   );
 
   const selectedPageRef = useRef(safeCurrentPage);
+  const previousChapterIdRef = useRef(chapterId);
 
   useEffect(() => {
+    if (previousChapterIdRef.current === chapterId) {
+      return;
+    }
+
+    previousChapterIdRef.current = chapterId;
     selectedPageRef.current = safeCurrentPage;
-  }, [safeCurrentPage, chapterId]);
+  }, [chapterId, safeCurrentPage]);
 
   useEffect(() => {
     if (selectedPageRef.current === safeCurrentPage) {
