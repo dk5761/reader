@@ -1,12 +1,12 @@
 import "react-native-reanimated";
 import "../global.css";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { HeroUINativeProvider } from "heroui-native";
 import { PressablesConfig } from "pressto";
 import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, type Edge } from "react-native-safe-area-context";
 import { Uniwind } from "uniwind";
 import { startAppUpdateForegroundListener } from "@/services/app-update";
 import { SourceProvider } from "@/services/source";
@@ -20,6 +20,9 @@ Uniwind.setTheme("dark");
 initializeDatabase();
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  const safeAreaEdges: Edge[] = pathname?.startsWith("/reader/") ? [] : ["top"];
+
   useEffect(() => {
     const stopListening = startAppUpdateForegroundListener();
     return () => {
@@ -41,7 +44,7 @@ export default function RootLayout() {
                   >
                     <StatusBar style="light" />
                     <SafeAreaView
-                      edges={["top"]}
+                      edges={safeAreaEdges}
                       style={{ flex: 1, backgroundColor: "#111214" }}
                     >
                       <Stack>

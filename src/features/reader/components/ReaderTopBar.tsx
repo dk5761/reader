@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
 import { Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BackButton } from "@/shared/ui";
 
 interface ReaderTopBarProps {
@@ -14,11 +15,12 @@ export const ReaderTopBar = ({
   chapterTitle,
 }: ReaderTopBarProps) => {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   return (
     <View
       pointerEvents={visible ? "auto" : "none"}
-      style={{ opacity: visible ? 1 : 0, paddingTop: 6 }}
+      style={{ opacity: visible ? 1 : 0, paddingTop: insets.top + 6 }}
       className="absolute left-0 right-0 top-0 bg-black/85 px-3 pb-3"
     >
       <BackButton
