@@ -24,6 +24,15 @@ const dedupeChapters = (chapters: SourceChapter[]): SourceChapter[] => {
   });
 };
 
+const normalizeIdentity = (value: string | undefined | null): string => {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  return raw.replace(/\/+$/, "");
+};
+
 const resolveInitialPage = (
   initialPageParam: string | undefined,
   persistedPage: number | undefined
@@ -57,24 +66,26 @@ export const useReaderSession = (params: ReaderSessionParams) => {
     [chaptersQuery.data]
   );
 
-  const initialChapter = useMemo(() => {
-    const chapter = chapters.find((entry) => entry.id === params.chapterId);
-    if (chapter) {
-      return chapter;
-    }
-
+  const resolvedInitialChapter = useMemo(() => {
     if (!params.chapterId) {
       return chapters[0] ?? null;
     }
 
-    return {
-      id: params.chapterId,
-      title: `Chapter ${params.chapterId}`,
-      url: params.chapterId,
-    } as SourceChapter;
+    const target = normalizeIdentity(params.chapterId);
+    if (!target) {
+      return chapters[0] ?? null;
+    }
+
+    return (
+      chapters.find((entry) => {
+        const chapterId = normalizeIdentity(entry.id);
+        const chapterUrl = normalizeIdentity(entry.url);
+        return chapterId === target || chapterUrl === target;
+      }) ?? null
+    );
   }, [chapters, params.chapterId]);
 
-  const initialChapterId = initialChapter?.id ?? params.chapterId;
+  const initialChapterId = resolvedInitialChapter?.id ?? params.chapterId;
 
   const chapterPagesQuery = useQuery(
     readerChapterPagesQueryOptions(
@@ -93,7 +104,25 @@ export const useReaderSession = (params: ReaderSessionParams) => {
   );
 
   const resolvedData = useMemo<ReaderSessionResolvedData | null>(() => {
-    if (!mangaQuery.data || !initialChapter || !chapterPagesQuery.data) {
+    if (
+      !mangaQuery.data ||
+      !chapterPagesQuery.data ||
+      chaptersQuery.isPending
+    ) {
+      return null;
+    }
+
+    const initialChapter =
+      resolvedInitialChapter ??
+      (params.chapterId
+        ? ({
+            id: params.chapterId,
+            title: `Chapter ${params.chapterId}`,
+            url: params.chapterId,
+          } as SourceChapter)
+        : chapters[0] ?? null);
+
+    if (!initialChapter) {
       return null;
     }
 
@@ -117,11 +146,13 @@ export const useReaderSession = (params: ReaderSessionParams) => {
     chapterPagesQuery.data,
     chapterProgressQuery.data?.pageIndex,
     chapters,
-    initialChapter,
+    chaptersQuery.isPending,
     mangaQuery.data,
+    params.chapterId,
     params.initialPageParam,
     params.mangaId,
     params.sourceId,
+    resolvedInitialChapter,
   ]);
 
   return {
