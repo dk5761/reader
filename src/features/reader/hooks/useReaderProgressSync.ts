@@ -9,6 +9,7 @@ import type { ReaderCurrentProgressPayload } from "../types/reader.types";
 
 const SAVE_THROTTLE_MS = 400;
 const TIMELINE_DUPLICATE_GUARD_MS = 5000;
+const CHAPTER_COMPLETION_THRESHOLD = 0.9;
 
 interface UseReaderProgressSyncParams {
   payload: ReaderCurrentProgressPayload | null;
@@ -94,7 +95,8 @@ export const useReaderProgressSync = ({
       totalPages !== undefined &&
       Number.isFinite(totalPages) &&
       totalPages > 0 &&
-      pendingPayload.pageIndex >= totalPages - 1;
+      (Math.min(Math.max(pendingPayload.pageIndex, 0), totalPages - 1) + 1) / totalPages >=
+        CHAPTER_COMPLETION_THRESHOLD;
 
     upsertReadingProgress({
       sourceId: pendingPayload.sourceId,
