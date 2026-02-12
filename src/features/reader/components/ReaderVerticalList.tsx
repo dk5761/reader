@@ -10,6 +10,7 @@ interface ReaderVerticalListProps {
   requestedFlatIndex?: number | null;
   onVisibleFlatIndexChange: (index: number) => void;
   onNearEnd: () => void;
+  onNearStart?: () => void;
   onTapPage: () => void;
   onScrollBeginDrag: () => void;
 }
@@ -20,6 +21,7 @@ export const ReaderVerticalList = ({
   requestedFlatIndex = null,
   onVisibleFlatIndexChange,
   onNearEnd,
+  onNearStart,
   onTapPage,
   onScrollBeginDrag,
 }: ReaderVerticalListProps) => {
@@ -27,6 +29,7 @@ export const ReaderVerticalList = ({
   const lastVisibleIndexRef = useRef<number>(-1);
   const lastRequestedIndexRef = useRef<number | null>(null);
   const lastNearEndTokenRef = useRef<string | null>(null);
+  const lastNearStartTokenRef = useRef<string | null>(null);
 
   const safeInitialIndex = useMemo(() => {
     if (pages.length === 0) {
@@ -103,6 +106,7 @@ export const ReaderVerticalList = ({
 
   useEffect(() => {
     lastNearEndTokenRef.current = null;
+    lastNearStartTokenRef.current = null;
   }, [pages.length]);
 
   const maybeTriggerNearEnd = useCallback(
@@ -125,6 +129,31 @@ export const ReaderVerticalList = ({
       onNearEnd();
     },
     [onNearEnd, pages.length]
+  );
+
+  const maybeTriggerNearStart = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (!onNearStart) {
+        return;
+      }
+
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      const distanceFromStart = contentOffset.y;
+
+      // Only trigger when near the very start of the content
+      if (distanceFromStart > 96) {
+        return;
+      }
+
+      const token = `${pages.length}:${Math.max(0, Math.floor(distanceFromStart))}`;
+      if (lastNearStartTokenRef.current === token) {
+        return;
+      }
+
+      lastNearStartTokenRef.current = token;
+      onNearStart();
+    },
+    [onNearStart, pages.length]
   );
 
   const renderItem = useCallback(
@@ -151,7 +180,10 @@ export const ReaderVerticalList = ({
       onEndReached={onNearEnd}
       onMomentumScrollEnd={maybeTriggerNearEnd}
       onScrollEndDrag={maybeTriggerNearEnd}
-      onScrollBeginDrag={onScrollBeginDrag}
+      onScrollBeginDrag={(event) => {
+        maybeTriggerNearStart(event);
+        onScrollBeginDrag();
+      }}
       scrollEventThrottle={120}
       showsVerticalScrollIndicator={false}
     />

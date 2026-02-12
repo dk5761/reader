@@ -10,6 +10,7 @@ interface ReaderHorizontalPagerProps {
   currentPageIndex: number;
   onPageSelected: (pageIndex: number) => void;
   onReachEnd: () => void;
+  onReachStart?: () => void;
   onTapPage: () => void;
   onPageScrollStateChanged?: (state: "idle" | "dragging" | "settling") => void;
 }
@@ -20,6 +21,7 @@ export const ReaderHorizontalPager = ({
   currentPageIndex,
   onPageSelected,
   onReachEnd,
+  onReachStart,
   onTapPage,
   onPageScrollStateChanged,
 }: ReaderHorizontalPagerProps) => {
@@ -67,8 +69,11 @@ export const ReaderHorizontalPager = ({
       if (index >= pages.length - 1) {
         onReachEnd();
       }
+      if (index === 0 && onReachStart) {
+        onReachStart();
+      }
     },
-    [onPageSelected, onReachEnd, pages.length]
+    [onPageSelected, onReachEnd, onReachStart, pages.length]
   );
 
   return (

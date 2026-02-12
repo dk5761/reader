@@ -75,6 +75,8 @@ export default function ReaderScreen() {
     isOverlayVisible,
     isLoadingNextChapter,
     nextChapterError,
+    isLoadingPreviousChapter,
+    previousChapterError,
     initializeSession,
     appendChapterPages,
     pruneVerticalWindow,
@@ -85,6 +87,8 @@ export default function ReaderScreen() {
     hideOverlay,
     setIsLoadingNextChapter,
     setNextChapterError,
+    setIsLoadingPreviousChapter,
+    setPreviousChapterError,
     reset,
   } = useReaderStore();
 
@@ -234,10 +238,13 @@ export default function ReaderScreen() {
     currentChapterId,
     loadedChapterIdsInMemory: loadedChapters.map((entry) => entry.chapter.id),
     isLoadingNextChapter,
+    isLoadingPreviousChapter,
     queryClient,
     onAppendChapter: appendChapterPages,
     setIsLoadingNextChapter,
     setNextChapterError,
+    setIsLoadingPreviousChapter,
+    setPreviousChapterError,
   });
 
   const handleHorizontalReachEnd = useCallback(async () => {
@@ -277,6 +284,64 @@ export default function ReaderScreen() {
 
     const targetFlatIndex = latestState.flatPages.findIndex(
       (entry) => entry.chapterId === loadedChapter.id && entry.pageIndex === 0
+    );
+
+    if (targetFlatIndex >= 0) {
+      setCurrentFlatIndex(targetFlatIndex);
+      setRequestedFlatIndex(targetFlatIndex);
+    }
+  }, [chapterFlow, mode, setCurrentFlatIndex]);
+
+  const handleHorizontalReachStart = useCallback(async () => {
+    if (!chapterFlow.previousChapter || !chapterFlow.canLoadPreviousChapter) {
+      return;
+    }
+
+    const prevChapterId = chapterFlow.previousChapter.id;
+    const loadedChapter = await chapterFlow.loadPreviousChapter();
+    if (loadedChapter && loadedChapter.id === prevChapterId) {
+      const latestState = useReaderStore.getState();
+      const prevChapter = latestState.loadedChapters.find(
+        (entry) => entry.chapter.id === prevChapterId
+      );
+      if (prevChapter) {
+        setCurrentHorizontalPosition(prevChapterId, prevChapter.pages.length - 1);
+      }
+    }
+  }, [chapterFlow, setCurrentHorizontalPosition]);
+
+  const handleVerticalNearStart = useCallback(async () => {
+    if (mode !== "vertical") {
+      return;
+    }
+
+    const originChapterId = useReaderStore.getState().currentChapterId;
+    if (!originChapterId) {
+      return;
+    }
+
+    const loadedChapter = await chapterFlow.loadPreviousChapter();
+    if (!loadedChapter) {
+      return;
+    }
+
+    const latestState = useReaderStore.getState();
+    if (
+      latestState.currentChapterId !== originChapterId &&
+      latestState.currentChapterId !== loadedChapter.id
+    ) {
+      return;
+    }
+
+    const prevChapter = latestState.loadedChapters.find(
+      (entry) => entry.chapter.id === loadedChapter.id
+    );
+    if (!prevChapter) {
+      return;
+    }
+
+    const targetFlatIndex = latestState.flatPages.findIndex(
+      (entry) => entry.chapterId === loadedChapter.id && entry.pageIndex === prevChapter.pages.length - 1
     );
 
     if (targetFlatIndex >= 0) {
@@ -453,6 +518,9 @@ export default function ReaderScreen() {
           onNearEnd={() => {
             void handleVerticalNearEnd();
           }}
+          onNearStart={() => {
+            void handleVerticalNearStart();
+          }}
           onTapPage={toggleOverlay}
           onScrollBeginDrag={hideOverlay}
         />
@@ -466,6 +534,9 @@ export default function ReaderScreen() {
           }}
           onReachEnd={() => {
             void handleHorizontalReachEnd();
+          }}
+          onReachStart={() => {
+            void handleHorizontalReachStart();
           }}
           onTapPage={toggleOverlay}
           onPageScrollStateChanged={(state) => {
@@ -494,13 +565,23 @@ export default function ReaderScreen() {
         totalPages={pageMetrics.totalPages}
         onSeekPage={handleSeekPage}
         nextChapterError={nextChapterError}
+        previousChapterError={previousChapterError}
         onRetryNextChapter={() => {
           void chapterFlow.loadNextChapter();
+        }}
+        onRetryPreviousChapter={() => {
+          void chapterFlow.loadPreviousChapter();
         }}
       />
 
       {isLoadingNextChapter ? (
         <View className="absolute bottom-28 self-center rounded-full bg-black/70 p-3">
+          <ActivityIndicator color="#67A4FF" />
+        </View>
+      ) : null}
+
+      {isLoadingPreviousChapter ? (
+        <View className="absolute bottom-40 self-center rounded-full bg-black/70 p-3">
           <ActivityIndicator color="#67A4FF" />
         </View>
       ) : null}

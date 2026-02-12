@@ -6,6 +6,15 @@ import type {
   ReaderMode,
   ReaderSessionMeta,
 } from "../types/reader.types";
+import {
+  MAX_VERTICAL_CHAPTERS_IN_MEMORY,
+  flattenLoadedChapters,
+  findExistingChapterIndex,
+  hasPagesChanged,
+  calculateRemappedFlatIndex,
+  calculateKeptChapters,
+  calculatePrunedFlatIndex,
+} from "../utils/readerStoreUtils";
 
 interface InitializeReaderSessionInput {
   sessionKey: string;
@@ -31,6 +40,8 @@ interface ReaderStoreState {
   currentPageIndex: number;
   isLoadingNextChapter: boolean;
   nextChapterError: string | null;
+  isLoadingPreviousChapter: boolean;
+  previousChapterError: string | null;
   initializeSession: (input: InitializeReaderSessionInput) => void;
   appendChapterPages: (chapter: SourceChapter, pages: SourcePage[]) => void;
   pruneVerticalWindow: () => void;
@@ -42,37 +53,10 @@ interface ReaderStoreState {
   hideOverlay: () => void;
   setIsLoadingNextChapter: (isLoading: boolean) => void;
   setNextChapterError: (error: string | null) => void;
+  setIsLoadingPreviousChapter: (isLoading: boolean) => void;
+  setPreviousChapterError: (error: string | null) => void;
   reset: () => void;
 }
-
-const getChapterDisplayTitle = (chapter: SourceChapter): string =>
-  chapter.title || (chapter.number !== undefined ? `Chapter ${chapter.number}` : "Chapter");
-
-const MAX_VERTICAL_CHAPTERS_IN_MEMORY = 2;
-
-const flattenLoadedChapters = (loadedChapters: ReaderLoadedChapter[]): ReaderFlatPage[] => {
-  const pages: ReaderFlatPage[] = [];
-
-  loadedChapters.forEach((loadedChapter, chapterIndex) => {
-    const totalPagesInChapter = loadedChapter.pages.length;
-    loadedChapter.pages.forEach((page, pageIndex) => {
-      pages.push({
-        key: `${loadedChapter.chapter.id}::${page.index}::${page.imageUrl}`,
-        flatIndex: pages.length,
-        chapterId: loadedChapter.chapter.id,
-        chapterTitle: getChapterDisplayTitle(loadedChapter.chapter),
-        chapterNumber: loadedChapter.chapter.number,
-        chapterIndex,
-        pageIndex,
-        totalPagesInChapter,
-        imageUrl: page.imageUrl,
-        headers: page.headers,
-      });
-    });
-  });
-
-  return pages;
-};
 
 const initialState = {
   mode: "vertical" as ReaderMode,
@@ -88,6 +72,8 @@ const initialState = {
   currentPageIndex: 0,
   isLoadingNextChapter: false,
   nextChapterError: null as string | null,
+  isLoadingPreviousChapter: false,
+  previousChapterError: null as string | null,
 };
 
 export const useReaderStore = create<ReaderStoreState>((set) => ({
@@ -124,26 +110,22 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
       isOverlayVisible: true,
       isLoadingNextChapter: false,
       nextChapterError: null,
+      isLoadingPreviousChapter: false,
+      previousChapterError: null,
     });
   },
 
   appendChapterPages: (chapter, pages) => {
     set((state) => {
-      const existingChapterIndex = state.loadedChapters.findIndex(
-        (loaded) => loaded.chapter.id === chapter.id
-      );
+      const existingChapterIndex = findExistingChapterIndex(state.loadedChapters, chapter.id);
+
       if (existingChapterIndex >= 0) {
         const existingChapter = state.loadedChapters[existingChapterIndex];
         const hasTrackedId = state.loadedChapterIdsSet.includes(chapter.id);
         const canReplacePages = pages.length > 0;
-        const hasDifferentPages =
-          existingChapter.pages.length !== pages.length ||
-          existingChapter.pages.some(
-            (page, index) =>
-              page.index !== pages[index]?.index || page.imageUrl !== pages[index]?.imageUrl
-          );
+        const pagesDifferent = hasPagesChanged(existingChapter.pages, pages);
 
-        if (!canReplacePages || !hasDifferentPages) {
+        if (!canReplacePages || !pagesDifferent) {
           if (hasTrackedId) {
             return state;
           }
@@ -163,21 +145,12 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
           ? state.loadedChapterIdsSet
           : [...state.loadedChapterIdsSet, chapter.id];
 
-        let nextFlatIndex = state.currentFlatIndex;
-        if (currentEntry) {
-          const remappedIndex = flatPages.findIndex(
-            (entry) =>
-              entry.chapterId === currentEntry.chapterId &&
-              entry.pageIndex === currentEntry.pageIndex
-          );
-          if (remappedIndex >= 0) {
-            nextFlatIndex = remappedIndex;
-          } else if (flatPages.length > 0) {
-            nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
-          }
-        } else if (flatPages.length > 0) {
-          nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
-        }
+        const nextFlatIndex = calculateRemappedFlatIndex(
+          flatPages,
+          state.currentFlatIndex,
+          currentEntry?.chapterId ?? "",
+          currentEntry?.pageIndex ?? 0
+        );
 
         return {
           ...state,
@@ -200,21 +173,12 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
         ? state.loadedChapterIdsSet
         : [...state.loadedChapterIdsSet, chapter.id];
 
-      let nextFlatIndex = state.currentFlatIndex;
-      if (currentEntry) {
-        const remappedIndex = flatPages.findIndex(
-          (entry) =>
-            entry.chapterId === currentEntry.chapterId &&
-            entry.pageIndex === currentEntry.pageIndex
-        );
-        if (remappedIndex >= 0) {
-          nextFlatIndex = remappedIndex;
-        } else if (flatPages.length > 0) {
-          nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
-        }
-      } else if (flatPages.length > 0) {
-        nextFlatIndex = Math.min(state.currentFlatIndex, flatPages.length - 1);
-      }
+      const nextFlatIndex = calculateRemappedFlatIndex(
+        flatPages,
+        state.currentFlatIndex,
+        currentEntry?.chapterId ?? "",
+        currentEntry?.pageIndex ?? 0
+      );
 
       return {
         ...state,
@@ -232,36 +196,11 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
         return state;
       }
 
-      if (state.loadedChapters.length <= MAX_VERTICAL_CHAPTERS_IN_MEMORY) {
-        return state;
-      }
-
-      const activeChapterId = state.currentChapterId;
-      const activeIndex = activeChapterId
-        ? state.loadedChapters.findIndex((entry) => entry.chapter.id === activeChapterId)
-        : -1;
-
-      let keptChapters: ReaderLoadedChapter[];
-      if (activeIndex < 0) {
-        keptChapters = state.loadedChapters.slice(-MAX_VERTICAL_CHAPTERS_IN_MEMORY);
-      } else {
-        const hasLoadedNextChapter = activeIndex < state.loadedChapters.length - 1;
-        if (hasLoadedNextChapter) {
-          // Defer pruning until the current chapter becomes the latest loaded chapter.
-          // Pruning here would remove items above the viewport and can jump scroll position.
-          return state;
-        }
-
-        const startIndex = Math.max(
-          0,
-          activeIndex - (MAX_VERTICAL_CHAPTERS_IN_MEMORY - 1)
-        );
-        keptChapters = state.loadedChapters.slice(startIndex, activeIndex + 1);
-
-        if (keptChapters.length > MAX_VERTICAL_CHAPTERS_IN_MEMORY) {
-          keptChapters = keptChapters.slice(-MAX_VERTICAL_CHAPTERS_IN_MEMORY);
-        }
-      }
+      const keptChapters = calculateKeptChapters(
+        state.loadedChapters,
+        state.currentChapterId,
+        MAX_VERTICAL_CHAPTERS_IN_MEMORY
+      );
 
       if (keptChapters.length === state.loadedChapters.length) {
         return state;
@@ -277,27 +216,12 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
         };
       }
 
-      const preferredFlatIndex = flatPages.findIndex(
-        (entry) =>
-          entry.chapterId === state.currentChapterId &&
-          entry.pageIndex === state.currentPageIndex
+      const nextFlatIndex = calculatePrunedFlatIndex(
+        flatPages,
+        state.currentFlatIndex,
+        state.currentChapterId,
+        state.currentPageIndex
       );
-
-      const currentEntry = state.flatPages[state.currentFlatIndex];
-      const currentEntryIndex =
-        currentEntry &&
-        flatPages.findIndex(
-          (entry) =>
-            entry.chapterId === currentEntry.chapterId &&
-            entry.pageIndex === currentEntry.pageIndex
-        );
-
-      const nextFlatIndex =
-        preferredFlatIndex >= 0
-          ? preferredFlatIndex
-          : currentEntryIndex !== undefined && currentEntryIndex >= 0
-            ? currentEntryIndex
-            : Math.max(0, Math.min(state.currentFlatIndex, flatPages.length - 1));
 
       const nextCurrentPage = flatPages[nextFlatIndex];
 
@@ -374,6 +298,14 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
 
   setNextChapterError: (error) => {
     set((state) => ({ ...state, nextChapterError: error }));
+  },
+
+  setIsLoadingPreviousChapter: (isLoading) => {
+    set((state) => ({ ...state, isLoadingPreviousChapter: isLoading }));
+  },
+
+  setPreviousChapterError: (error) => {
+    set((state) => ({ ...state, previousChapterError: error }));
   },
 
   reset: () => {

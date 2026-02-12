@@ -13,7 +13,9 @@ interface ReaderBottomBarProps {
   totalPages: number;
   onSeekPage: (pageIndex: number) => void;
   nextChapterError: string | null;
+  previousChapterError?: string | null;
   onRetryNextChapter?: () => void;
+  onRetryPreviousChapter?: () => void;
 }
 
 export const ReaderBottomBar = ({
@@ -24,7 +26,9 @@ export const ReaderBottomBar = ({
   totalPages,
   onSeekPage,
   nextChapterError,
+  previousChapterError,
   onRetryNextChapter,
+  onRetryPreviousChapter,
 }: ReaderBottomBarProps) => {
   const insets = useSafeAreaInsets();
   const [dragPage, setDragPage] = useState<number | null>(null);
@@ -104,6 +108,17 @@ export const ReaderBottomBar = ({
           </Text>
           {onRetryNextChapter ? (
             <ActionPillButton compact label="Retry" onPress={onRetryNextChapter} />
+          ) : null}
+        </View>
+      ) : null}
+
+      {previousChapterError ? (
+        <View className="mt-2 flex-row items-center justify-between rounded-lg border border-[#3A2A2A] bg-[#271A1A] px-3 py-2">
+          <Text numberOfLines={2} className="flex-1 pr-3 text-xs text-[#F3B7B7]">
+            {previousChapterError}
+          </Text>
+          {onRetryPreviousChapter ? (
+            <ActionPillButton compact label="Retry" onPress={onRetryPreviousChapter} />
           ) : null}
         </View>
       ) : null}
