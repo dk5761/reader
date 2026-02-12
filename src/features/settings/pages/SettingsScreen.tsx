@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { Switch } from "heroui-native";
 import { useMemo } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useRouter } from "expo-router";
 import type { ReaderDefaultMode } from "@/services/settings";
 import {
   ActionPillButton,
@@ -18,6 +19,7 @@ import { AppUpdateCard } from "../components/AppUpdateCard";
 import { LibraryUpdateCard } from "../components/LibraryUpdateCard";
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const settingsQuery = useQuery(appSettingsQueryOptions());
   const updateSettingsMutation = useUpdateAppSettingsMutation();
 
@@ -125,6 +127,18 @@ export default function SettingsScreen() {
         </View>
 
         <LibraryUpdateCard />
+
+        <TouchableOpacity
+          className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"
+          onPress={() => {
+            router.push("/backup");
+          }}
+        >
+          <Text className="text-base font-semibold text-white">Backup & Restore</Text>
+          <Text className="mt-1 text-xs text-[#9B9CA6]">
+            Export or import your library, categories, progress, and settings.
+          </Text>
+        </TouchableOpacity>
 
         <AppUpdateCard />
 
