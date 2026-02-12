@@ -42,11 +42,32 @@ interface ReaderStoreState {
   nextChapterError: string | null;
   isLoadingPreviousChapter: boolean;
   previousChapterError: string | null;
+  // State for showing previous chapter prompt instead of auto-loading
+  showPreviousChapterPrompt: boolean;
+  pendingPreviousChapter: SourceChapter | null;
+  hasViewedCurrentChapter: boolean; // Track if user has viewed some content before showing prompt
+  currentChapterViewedPageIndex: number | null; // Track highest page viewed in current chapter
   initializeSession: (input: InitializeReaderSessionInput) => void;
   appendChapterPages: (chapter: SourceChapter, pages: SourcePage[]) => void;
+  // Atomic methods that pre-calculate all state changes before applying
+  appendChapterPagesAtomic: (
+    chapter: SourceChapter,
+    pages: SourcePage[],
+    targetPageIndex?: number
+  ) => void;
+  appendPreviousChapterAtomic: (chapter: SourceChapter, pages: SourcePage[]) => void;
+  // Show prompt to user instead of auto-loading previous chapter
+  setShowPreviousChapterPrompt: (chapter: SourceChapter) => void;
+  hidePreviousChapterPrompt: () => void;
+  // Mark that user has viewed some content in current chapter (enables showing previous chapter prompt)
+  markChapterViewed: (pageIndex: number) => void;
+  // Reset viewing state when chapter changes
+  resetChapterViewState: () => void;
   pruneVerticalWindow: () => void;
   setCurrentFlatIndex: (index: number) => void;
   setCurrentHorizontalPosition: (chapterId: string, pageIndex: number) => void;
+  // Atomic position update that sets all position-related state at once
+  setCurrentPositionAtomic: (chapterId: string, pageIndex: number, flatIndex: number) => void;
   setMode: (mode: ReaderMode) => void;
   toggleOverlay: () => void;
   showOverlay: () => void;
@@ -74,6 +95,10 @@ const initialState = {
   nextChapterError: null as string | null,
   isLoadingPreviousChapter: false,
   previousChapterError: null as string | null,
+  showPreviousChapterPrompt: false,
+  pendingPreviousChapter: null as SourceChapter | null,
+  hasViewedCurrentChapter: false,
+  currentChapterViewedPageIndex: null as number | null,
 };
 
 export const useReaderStore = create<ReaderStoreState>((set) => ({
@@ -112,6 +137,10 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
       nextChapterError: null,
       isLoadingPreviousChapter: false,
       previousChapterError: null,
+      showPreviousChapterPrompt: false,
+      pendingPreviousChapter: null,
+      hasViewedCurrentChapter: false,
+      currentChapterViewedPageIndex: null,
     });
   },
 
@@ -186,6 +215,112 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
         loadedChapterIdsSet,
         flatPages,
         currentFlatIndex: nextFlatIndex,
+      };
+    });
+  },
+
+  // Atomic method that adds next chapter and sets position in one update
+  appendChapterPagesAtomic: (chapter, pages, targetPageIndex = 0) => {
+    set((state) => {
+      // Check if already loaded
+      const existingIndex = findExistingChapterIndex(state.loadedChapters, chapter.id);
+      if (existingIndex >= 0) {
+        // Chapter already loaded, just navigate to it
+        const targetFlatIndex = state.flatPages.findIndex(
+          (entry) => entry.chapterId === chapter.id && entry.pageIndex === targetPageIndex
+        );
+        if (targetFlatIndex >= 0) {
+          const targetPage = state.flatPages[targetFlatIndex];
+          return {
+            ...state,
+            currentFlatIndex: targetFlatIndex,
+            currentChapterId: targetPage?.chapterId ?? state.currentChapterId,
+            currentPageIndex: targetPage?.pageIndex ?? state.currentPageIndex,
+          };
+        }
+        return state;
+      }
+
+      // Add new chapter and compute all state at once
+      const newLoadedChapters = [...state.loadedChapters, { chapter, pages }];
+      const newFlatPages = flattenLoadedChapters(newLoadedChapters);
+
+      // Find target position in the NEW flat pages
+      const targetFlatIndex = newFlatPages.findIndex(
+        (entry) => entry.chapterId === chapter.id && entry.pageIndex === targetPageIndex
+      );
+
+      const targetPage = newFlatPages[targetFlatIndex >= 0 ? targetFlatIndex : 0];
+
+      return {
+        ...state,
+        loadedChapters: newLoadedChapters,
+        loadedChapterIdsSet: [...state.loadedChapterIdsSet, chapter.id],
+        flatPages: newFlatPages,
+        currentFlatIndex: targetFlatIndex >= 0 ? targetFlatIndex : state.currentFlatIndex,
+        currentChapterId: targetPage?.chapterId ?? state.currentChapterId,
+        currentPageIndex: targetPage?.pageIndex ?? state.currentPageIndex,
+      };
+    });
+  },
+
+  // Atomic method for adding previous chapter (goes to last page of that chapter)
+  appendPreviousChapterAtomic: (chapter, pages) => {
+    set((state) => {
+      // Check if already loaded
+      const existingIndex = findExistingChapterIndex(state.loadedChapters, chapter.id);
+      if (existingIndex >= 0) {
+        // Chapter already loaded, navigate to its last page
+        const targetFlatIndex = state.flatPages.findIndex(
+          (entry) => entry.chapterId === chapter.id && entry.pageIndex === pages.length - 1
+        );
+        if (targetFlatIndex >= 0) {
+          const targetPage = state.flatPages[targetFlatIndex];
+          return {
+            ...state,
+            currentFlatIndex: targetFlatIndex,
+            currentChapterId: targetPage?.chapterId ?? state.currentChapterId,
+            currentPageIndex: targetPage?.pageIndex ?? state.currentPageIndex,
+          };
+        }
+        return state;
+      }
+
+      // Add new chapter at the beginning (for previous chapter) and compute all state
+      const newLoadedChapters = [{ chapter, pages }, ...state.loadedChapters];
+      const newFlatPages = flattenLoadedChapters(newLoadedChapters);
+
+      // Target is the last page of the new previous chapter
+      const targetPageIndex = pages.length - 1;
+      const targetFlatIndex = newFlatPages.findIndex(
+        (entry) => entry.chapterId === chapter.id && entry.pageIndex === targetPageIndex
+      );
+
+      const targetPage = newFlatPages[targetFlatIndex >= 0 ? targetFlatIndex : 0];
+
+      return {
+        ...state,
+        loadedChapters: newLoadedChapters,
+        loadedChapterIdsSet: [...state.loadedChapterIdsSet, chapter.id],
+        flatPages: newFlatPages,
+        currentFlatIndex: targetFlatIndex >= 0 ? targetFlatIndex : state.currentFlatIndex,
+        currentChapterId: targetPage?.chapterId ?? state.currentChapterId,
+        currentPageIndex: targetPage?.pageIndex ?? state.currentPageIndex,
+      };
+    });
+  },
+
+  // Atomic position update - sets all position state at once
+  setCurrentPositionAtomic: (chapterId, pageIndex, flatIndex) => {
+    set((state) => {
+      const safeFlatIndex = Math.max(0, Math.min(flatIndex, state.flatPages.length - 1));
+      const currentPage = state.flatPages[safeFlatIndex];
+
+      return {
+        ...state,
+        currentFlatIndex: safeFlatIndex,
+        currentChapterId: currentPage?.chapterId ?? chapterId,
+        currentPageIndex: currentPage?.pageIndex ?? pageIndex,
       };
     });
   },
@@ -306,6 +441,54 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
 
   setPreviousChapterError: (error) => {
     set((state) => ({ ...state, previousChapterError: error }));
+  },
+
+  // Show prompt to user instead of auto-loading previous chapter
+  setShowPreviousChapterPrompt: (chapter) => {
+    set((state) => ({
+      ...state,
+      showPreviousChapterPrompt: true,
+      pendingPreviousChapter: chapter,
+    }));
+  },
+
+  hidePreviousChapterPrompt: () => {
+    set((state) => ({
+      ...state,
+      showPreviousChapterPrompt: false,
+      pendingPreviousChapter: null,
+    }));
+  },
+
+  // Mark that user has viewed some content in current chapter
+  markChapterViewed: (pageIndex) => {
+    set((state) => {
+      // Only mark as viewed if user has scrolled past initial page (at least page 1 or 2)
+      const hasScrolledPastStart = pageIndex >= 1;
+      const isHighestPageViewed = state.currentChapterViewedPageIndex === null ||
+        pageIndex > state.currentChapterViewedPageIndex;
+
+      if (!hasScrolledPastStart && !isHighestPageViewed) {
+        return state;
+      }
+
+      return {
+        ...state,
+        hasViewedCurrentChapter: hasScrolledPastStart || state.hasViewedCurrentChapter,
+        currentChapterViewedPageIndex: isHighestPageViewed ? pageIndex : state.currentChapterViewedPageIndex,
+      };
+    });
+  },
+
+  // Reset viewing state when chapter changes
+  resetChapterViewState: () => {
+    set((state) => ({
+      ...state,
+      hasViewedCurrentChapter: false,
+      currentChapterViewedPageIndex: null,
+      showPreviousChapterPrompt: false,
+      pendingPreviousChapter: null,
+    }));
   },
 
   reset: () => {

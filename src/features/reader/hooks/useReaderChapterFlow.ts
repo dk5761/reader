@@ -18,6 +18,13 @@ interface UseReaderChapterFlowParams {
   setPreviousChapterError: (error: string | null) => void;
 }
 
+// Type for atomic append function that handles both adding chapter and setting position
+type AtomicAppendFn = (
+  chapter: SourceChapter,
+  pages: Awaited<ReturnType<typeof prefetchReaderChapterPages>>,
+  targetPageIndex?: number
+) => void;
+
 const resolveNextChapter = (
   chapters: SourceChapter[],
   currentChapterId: string
@@ -212,6 +219,84 @@ export const useReaderChapterFlow = ({
     sourceId,
   ]);
 
+  // Atomic version of loadNextChapter that uses a callback that handles position update
+  const loadNextChapterAtomic = useCallback(
+    async (atomicAppend: AtomicAppendFn) => {
+      if (!nextChapter || !sourceId || isLoadingNextChapter) {
+        return null;
+      }
+
+      if (loadedChapterIdsInMemory.includes(nextChapter.id)) {
+        // Already loaded, return the chapter info
+        return nextChapter;
+      }
+
+      try {
+        setIsLoadingNextChapter(true);
+        setNextChapterError(null);
+        const pages = await prefetchReaderChapterPages(queryClient, sourceId, nextChapter.id);
+        // Use atomic append that handles position update
+        atomicAppend(nextChapter, pages, 0);
+        return nextChapter;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not load the next chapter.";
+        setNextChapterError(message);
+        return null;
+      } finally {
+        setIsLoadingNextChapter(false);
+      }
+    },
+    [
+      isLoadingNextChapter,
+      loadedChapterIdsInMemory,
+      nextChapter,
+      queryClient,
+      setIsLoadingNextChapter,
+      setNextChapterError,
+      sourceId,
+    ]
+  );
+
+  // Atomic version of loadPreviousChapter that uses a callback that handles position update
+  const loadPreviousChapterAtomic = useCallback(
+    async (atomicAppend: AtomicAppendFn) => {
+      if (!previousChapter || !sourceId || isLoadingPreviousChapter) {
+        return null;
+      }
+
+      if (loadedChapterIdsInMemory.includes(previousChapter.id)) {
+        // Already loaded, return the chapter info
+        return previousChapter;
+      }
+
+      try {
+        setIsLoadingPreviousChapter(true);
+        setPreviousChapterError(null);
+        const pages = await prefetchReaderChapterPages(queryClient, sourceId, previousChapter.id);
+        // Use atomic append (no target page index = use last page for previous chapter)
+        atomicAppend(previousChapter, pages);
+        return previousChapter;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Could not load the previous chapter.";
+        setPreviousChapterError(message);
+        return null;
+      } finally {
+        setIsLoadingPreviousChapter(false);
+      }
+    },
+    [
+      isLoadingPreviousChapter,
+      loadedChapterIdsInMemory,
+      previousChapter,
+      queryClient,
+      setIsLoadingPreviousChapter,
+      setPreviousChapterError,
+      sourceId,
+    ]
+  );
+
   return {
     nextChapter,
     previousChapter,
@@ -219,5 +304,7 @@ export const useReaderChapterFlow = ({
     canLoadPreviousChapter,
     loadNextChapter,
     loadPreviousChapter,
+    loadNextChapterAtomic,
+    loadPreviousChapterAtomic,
   };
 };

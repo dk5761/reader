@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { appSettingsQueryOptions } from "@/features/settings/api";
@@ -65,11 +65,21 @@ export default function ReaderScreen() {
     nextChapterError,
     isLoadingPreviousChapter,
     previousChapterError,
+    showPreviousChapterPrompt,
+    pendingPreviousChapter,
+    hasViewedCurrentChapter,
     initializeSession,
     appendChapterPages,
+    appendChapterPagesAtomic,
+    appendPreviousChapterAtomic,
+    setShowPreviousChapterPrompt,
+    hidePreviousChapterPrompt,
+    markChapterViewed,
+    resetChapterViewState,
     pruneVerticalWindow,
     setCurrentFlatIndex,
     setCurrentHorizontalPosition,
+    setCurrentPositionAtomic,
     setMode,
     toggleOverlay,
     hideOverlay,
@@ -124,6 +134,19 @@ export default function ReaderScreen() {
     },
     [reset]
   );
+
+  // Track chapter changes and reset view state when chapter changes
+  const previousChapterIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentChapterId && previousChapterIdRef.current !== currentChapterId) {
+      // Chapter changed, reset view state
+      previousChapterIdRef.current = currentChapterId;
+      // Only reset if this isn't the initial load
+      if (sessionKey) {
+        resetChapterViewState();
+      }
+    }
+  }, [currentChapterId, sessionKey, resetChapterViewState]);
 
   useEffect(() => {
     if (mode !== "vertical" && requestedFlatIndex !== null) {
@@ -257,28 +280,21 @@ export default function ReaderScreen() {
       return;
     }
 
-    const loadedChapter = await chapterFlow.loadNextChapter();
+    const loadedChapter = await chapterFlow.loadNextChapterAtomic(appendChapterPagesAtomic);
     if (!loadedChapter) {
       return;
     }
 
+    // The atomic method already handles position update, just set requested index for sync
     const latestState = useReaderStore.getState();
-    if (
-      latestState.currentChapterId !== originChapterId &&
-      latestState.currentChapterId !== loadedChapter.id
-    ) {
-      return;
-    }
-
     const targetFlatIndex = latestState.flatPages.findIndex(
       (entry) => entry.chapterId === loadedChapter.id && entry.pageIndex === 0
     );
 
     if (targetFlatIndex >= 0) {
-      setCurrentFlatIndex(targetFlatIndex);
       setRequestedFlatIndex(targetFlatIndex);
     }
-  }, [chapterFlow, mode, setCurrentFlatIndex]);
+  }, [chapterFlow, mode, appendChapterPagesAtomic, setRequestedFlatIndex]);
 
   const handleHorizontalReachStart = useCallback(async () => {
     if (!chapterFlow.previousChapter || !chapterFlow.canLoadPreviousChapter) {
@@ -308,35 +324,94 @@ export default function ReaderScreen() {
       return;
     }
 
-    const loadedChapter = await chapterFlow.loadPreviousChapter();
-    if (!loadedChapter) {
+    // If prompt is already showing, load the chapter
+    if (showPreviousChapterPrompt && pendingPreviousChapter) {
+      // User has scrolled down to confirm, load the chapter
+      const loadedChapter = await chapterFlow.loadPreviousChapterAtomic(appendPreviousChapterAtomic);
+      if (loadedChapter) {
+        // Hide the prompt after loading
+        hidePreviousChapterPrompt();
+
+        // Reset view state for new chapter
+        resetChapterViewState();
+
+        // Set requested index for sync
+        const latestState = useReaderStore.getState();
+        const targetFlatIndex = latestState.flatPages.findIndex(
+          (entry) => entry.chapterId === loadedChapter.id
+        );
+        if (targetFlatIndex >= 0) {
+          setRequestedFlatIndex(targetFlatIndex);
+        }
+      }
       return;
     }
 
-    const latestState = useReaderStore.getState();
-    if (
-      latestState.currentChapterId !== originChapterId &&
-      latestState.currentChapterId !== loadedChapter.id
-    ) {
+    // Check if previous chapter exists
+    if (!chapterFlow.previousChapter) {
       return;
     }
 
-    const prevChapter = latestState.loadedChapters.find(
-      (entry) => entry.chapter.id === loadedChapter.id
-    );
-    if (!prevChapter) {
+    // Check if already loaded
+    if (loadedChapters.some((entry) => entry.chapter.id === chapterFlow.previousChapter?.id)) {
+      // Already loaded, no need to show prompt
       return;
     }
 
-    const targetFlatIndex = latestState.flatPages.findIndex(
-      (entry) => entry.chapterId === loadedChapter.id && entry.pageIndex === prevChapter.pages.length - 1
-    );
-
-    if (targetFlatIndex >= 0) {
-      setCurrentFlatIndex(targetFlatIndex);
-      setRequestedFlatIndex(targetFlatIndex);
+    // Only show prompt if user has viewed some content in current chapter
+    // This prevents showing prompt on initial load when user hasn't read yet
+    if (!hasViewedCurrentChapter) {
+      return;
     }
-  }, [chapterFlow, mode, setCurrentFlatIndex]);
+
+    // Show prompt instead of auto-loading
+    setShowPreviousChapterPrompt(chapterFlow.previousChapter);
+  }, [
+    mode,
+    showPreviousChapterPrompt,
+    pendingPreviousChapter,
+    hasViewedCurrentChapter,
+    chapterFlow.previousChapter,
+    loadedChapters,
+    setShowPreviousChapterPrompt,
+    hidePreviousChapterPrompt,
+    resetChapterViewState,
+    chapterFlow,
+    appendPreviousChapterAtomic,
+    setRequestedFlatIndex,
+  ]);
+
+  // Handle scrolling down after prompt is shown - this loads the previous chapter
+  const handleVisibleIndexChange = useCallback(
+    (index: number) => {
+      // If prompt is showing and user scrolls down (index increases), load the chapter
+      if (showPreviousChapterPrompt && pendingPreviousChapter && index > 0) {
+        // Clear the prompt and let the nearStart handler deal with loading
+        hidePreviousChapterPrompt();
+        // Trigger near start which will now load the chapter
+        setTimeout(() => {
+          void handleVerticalNearStart();
+        }, 100);
+      }
+    },
+    [showPreviousChapterPrompt, pendingPreviousChapter, hidePreviousChapterPrompt, handleVerticalNearStart]
+  );
+
+  const handleVisibleIndexChangeWithState = useCallback(
+    (index: number) => {
+      setCurrentFlatIndex(index);
+      // Track that user has viewed this page
+      const currentPage = flatPages[index];
+      if (currentPage) {
+        markChapterViewed(currentPage.pageIndex);
+      }
+      handleVisibleIndexChange(index);
+      if (requestedFlatIndex !== null && index === requestedFlatIndex) {
+        setRequestedFlatIndex(null);
+      }
+    },
+    [setCurrentFlatIndex, handleVisibleIndexChange, requestedFlatIndex, setRequestedFlatIndex, flatPages, markChapterViewed]
+  );
 
   const pageMetrics = useMemo<ReaderPageMetrics>(() => {
     if (mode === "vertical") {
@@ -493,25 +568,38 @@ export default function ReaderScreen() {
       <StatusBar style="light" hidden={!isOverlayVisible} />
 
       {mode === "vertical" ? (
-        <ReaderVerticalList
-          pages={flatPages}
-          initialFlatIndex={currentFlatIndex}
-          requestedFlatIndex={requestedFlatIndex}
-          onVisibleFlatIndexChange={(index) => {
-            setCurrentFlatIndex(index);
-            if (requestedFlatIndex !== null && index === requestedFlatIndex) {
-              setRequestedFlatIndex(null);
-            }
-          }}
-          onNearEnd={() => {
-            void handleVerticalNearEnd();
-          }}
-          onNearStart={() => {
-            void handleVerticalNearStart();
-          }}
-          onTapPage={toggleOverlay}
-          onScrollBeginDrag={hideOverlay}
-        />
+        <>
+          <ReaderVerticalList
+            pages={flatPages}
+            initialFlatIndex={currentFlatIndex}
+            requestedFlatIndex={requestedFlatIndex}
+            onVisibleFlatIndexChange={handleVisibleIndexChangeWithState}
+            onNearEnd={() => {
+              void handleVerticalNearEnd();
+            }}
+            onNearStart={() => {
+              void handleVerticalNearStart();
+            }}
+            onTapPage={toggleOverlay}
+            onScrollBeginDrag={hideOverlay}
+          />
+          {/* Previous Chapter Prompt */}
+          {showPreviousChapterPrompt && pendingPreviousChapter && (
+            <View className="absolute bottom-24 left-4 right-4 items-center">
+              <View className="w-full max-w-sm items-center rounded-xl bg-black/80 p-4">
+                <Text className="text-base font-medium text-white">
+                  Previous chapter available
+                </Text>
+                <Text className="mt-1 text-sm text-gray-300">
+                  {pendingPreviousChapter.title || `Chapter ${pendingPreviousChapter.number}`}
+                </Text>
+                <Text className="mt-2 text-xs text-gray-400">
+                  Scroll down to load
+                </Text>
+              </View>
+            </View>
+          )}
+        </>
       ) : currentLoadedChapter ? (
         <ReaderHorizontalPager
           chapterId={currentLoadedChapter.chapter.id}

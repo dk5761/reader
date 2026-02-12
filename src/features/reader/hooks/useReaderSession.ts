@@ -12,18 +12,6 @@ import type {
   ReaderSessionResolvedData,
 } from "../types/reader.types";
 
-const dedupeChapters = (chapters: SourceChapter[]): SourceChapter[] => {
-  const seen = new Set<string>();
-  return chapters.filter((chapter) => {
-    const key = `${chapter.id}::${chapter.url}`;
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-};
-
 const normalizeIdentity = (value: string | undefined | null): string => {
   const raw = String(value ?? "").trim();
   if (!raw) {
@@ -31,6 +19,24 @@ const normalizeIdentity = (value: string | undefined | null): string => {
   }
 
   return raw.replace(/\/+$/, "");
+};
+
+const dedupeChapters = (chapters: SourceChapter[]): SourceChapter[] => {
+  const seen = new Map<string, SourceChapter>();
+
+  chapters.forEach((chapter) => {
+    // Use normalized id + url as key
+    const normalizedId = normalizeIdentity(chapter.id);
+    const normalizedUrl = normalizeIdentity(chapter.url);
+    const key = `${normalizedId}::${normalizedUrl}`;
+
+    // Only add if we haven't seen this exact combination
+    if (!seen.has(key)) {
+      seen.set(key, chapter);
+    }
+  });
+
+  return Array.from(seen.values());
 };
 
 const resolveInitialPage = (
@@ -76,13 +82,30 @@ export const useReaderSession = (params: ReaderSessionParams) => {
       return chapters[0] ?? null;
     }
 
-    return (
-      chapters.find((entry) => {
-        const chapterId = normalizeIdentity(entry.id);
-        const chapterUrl = normalizeIdentity(entry.url);
-        return chapterId === target || chapterUrl === target;
-      }) ?? null
-    );
+    // First try exact match on id or url
+    const exactMatch = chapters.find((entry) => {
+      const chapterId = normalizeIdentity(entry.id);
+      const chapterUrl = normalizeIdentity(entry.url);
+      return chapterId === target || chapterUrl === target;
+    });
+
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    // If no exact match, try to find by chapter number
+    const targetNum = Number.parseFloat(target);
+    if (Number.isFinite(targetNum)) {
+      const byNumber = chapters.find((entry) => {
+        return entry.number === targetNum;
+      });
+      if (byNumber) {
+        return byNumber;
+      }
+    }
+
+    // Last resort: return first chapter (shouldn't happen if source is correct)
+    return chapters[0] ?? null;
   }, [chapters, params.chapterId]);
 
   const initialChapterId = resolvedInitialChapter?.id ?? params.chapterId;

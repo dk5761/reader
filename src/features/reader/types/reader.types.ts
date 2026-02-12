@@ -64,3 +64,11 @@ export interface ReaderPageMetrics {
   totalPages: number;
   chapterId: string | null;
 }
+
+// Placeholder for showing previous chapter loading prompt
+export interface ReaderChapterPlaceholder {
+  type: "previous-chapter-prompt";
+  chapterId: string;
+  chapterTitle: string;
+  chapterNumber?: number;
+}
