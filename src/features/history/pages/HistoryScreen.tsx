@@ -4,7 +4,7 @@ import { Card } from "heroui-native";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FlatList, Text, View } from "react-native";
 import type { ReadingHistoryMangaGroup } from "@/services/history";
 import { useSource } from "@/services/source";
@@ -15,41 +15,20 @@ import {
   ScreenHeader,
 } from "@/shared/ui";
 import { groupedReadingHistoryQueryOptions } from "../api";
+import { formatRelativeTime } from "@/shared/utils";
 
-const HISTORY_ENTRY_LIMIT = 100;
+const INITIAL_HISTORY_ENTRY_LIMIT = 20;
 const HISTORY_CHAPTER_LIMIT = 5;
-
-const formatRelativeTime = (timestamp: number): string => {
-  const diffMs = Math.max(0, Date.now() - timestamp);
-  const minuteMs = 60 * 1000;
-  const hourMs = 60 * minuteMs;
-  const dayMs = 24 * hourMs;
-
-  if (diffMs < minuteMs) {
-    return "just now";
-  }
-
-  if (diffMs < hourMs) {
-    return `${Math.floor(diffMs / minuteMs)}m ago`;
-  }
-
-  if (diffMs < dayMs) {
-    return `${Math.floor(diffMs / hourMs)}h ago`;
-  }
-
-  if (diffMs < dayMs * 7) {
-    return `${Math.floor(diffMs / dayMs)}d ago`;
-  }
-
-  return new Date(timestamp).toLocaleDateString();
-};
+const LOAD_MORE_INCREMENT = 20;
 
 export default function HistoryScreen() {
   const router = useRouter();
   const { sources } = useSource();
+  const [entryLimit, setEntryLimit] = useState(INITIAL_HISTORY_ENTRY_LIMIT);
+
   const groupedHistoryQuery = useQuery(
     groupedReadingHistoryQueryOptions({
-      entryLimit: HISTORY_ENTRY_LIMIT,
+      entryLimit,
       perMangaChapterLimit: HISTORY_CHAPTER_LIMIT,
     })
   );
@@ -64,6 +43,14 @@ export default function HistoryScreen() {
     () => (allGroups ?? []).filter((group) => allowedSourceIds.has(group.sourceId)),
     [allGroups, allowedSourceIds]
   );
+
+  const hasMore = visibleGroups.length >= entryLimit;
+
+  const loadMore = () => {
+    if (!groupedHistoryQuery.isFetchingNext && hasMore) {
+      setEntryLimit((prev) => prev + LOAD_MORE_INCREMENT);
+    }
+  };
 
   const renderItem = ({ item }: { item: ReadingHistoryMangaGroup }) => (
     <Card
@@ -171,6 +158,23 @@ export default function HistoryScreen() {
                 : "No reading history yet."}
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          hasMore && visibleGroups.length > 0 ? (
+            <View className="pt-4">
+              <PressableScale onPress={loadMore} disabled={groupedHistoryQuery.isFetchingNext}>
+                <View className="items-center rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-3">
+                  <Text className="text-sm font-medium text-white">
+                    {groupedHistoryQuery.isFetchingNext ? "Loading..." : "Load More"}
+                  </Text>
+                </View>
+              </PressableScale>
+            </View>
+          ) : visibleGroups.length > 0 ? (
+            <View className="items-center pt-4">
+              <Text className="text-xs text-[#8B8D98]">All history loaded</Text>
+            </View>
+          ) : null
         }
       />
     </View>

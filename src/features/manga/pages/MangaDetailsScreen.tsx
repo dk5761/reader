@@ -23,6 +23,7 @@ import {
   CenteredState,
   CollapsibleText,
 } from "@/shared/ui";
+import { getDecodedParam } from "@/shared/utils";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
@@ -51,19 +52,6 @@ interface PendingBelowRule {
   targetReadState: boolean;
   opId: number;
 }
-
-const getDecodedParam = (value: string | string[] | undefined): string => {
-  const paramValue = Array.isArray(value) ? value[0] : value;
-  if (!paramValue) {
-    return "";
-  }
-
-  try {
-    return decodeURIComponent(paramValue);
-  } catch {
-    return paramValue;
-  }
-};
 
 const formatChapterMeta = (chapter: SourceChapter): string => {
   const parts: string[] = [];

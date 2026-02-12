@@ -6,14 +6,7 @@ import { ScrollView, Text, View } from "react-native";
 import { useSource } from "@/services/source";
 import { ScreenHeader } from "@/shared/ui";
 import { GlobalSearchPanel } from "../components";
-
-const getHostLabel = (baseUrl: string): string => {
-  try {
-    return new URL(baseUrl).host;
-  } catch {
-    return baseUrl;
-  }
-};
+import { getHostLabel } from "@/shared/utils";
 
 export default function BrowseTabScreen() {
   const router = useRouter();

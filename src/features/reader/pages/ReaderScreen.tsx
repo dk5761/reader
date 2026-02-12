@@ -18,19 +18,7 @@ import {
   ReaderVerticalList,
 } from "../components";
 import { ActionPillButton, BackButton, CenteredLoadingState, CenteredState } from "@/shared/ui";
-
-const getDecodedParam = (value: string | string[] | undefined): string => {
-  const param = Array.isArray(value) ? value[0] : value;
-  if (!param) {
-    return "";
-  }
-
-  try {
-    return decodeURIComponent(param);
-  } catch {
-    return param;
-  }
-};
+import { getDecodedParam } from "@/shared/utils";
 
 export default function ReaderScreen() {
   const router = useRouter();
