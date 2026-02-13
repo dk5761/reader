@@ -111,12 +111,19 @@ export const ReaderVerticalList = ({
 
   const maybeTriggerNearEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+      const { contentOffset, contentSize, layoutMeasurement, velocity } = event.nativeEvent;
       const distanceFromEnd =
         contentSize.height - (contentOffset.y + layoutMeasurement.height);
 
-      // Fallback for cases where FlashList onEndReached is missed on initial loads.
+      // Only trigger when near the end of content
       if (distanceFromEnd > 96) {
+        return;
+      }
+
+      // Only trigger next chapter when user is decelerating (velocity close to 0)
+      // This prevents skipping chapters when swiping fast - user needs to slow down
+      // or do a deliberate swipe to trigger the next chapter
+      if (velocity && Math.abs(velocity.y) > 0.3) {
         return;
       }
 
@@ -137,11 +144,17 @@ export const ReaderVerticalList = ({
         return;
       }
 
-      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      const { contentOffset, layoutMeasurement, velocity } = event.nativeEvent;
       const distanceFromStart = contentOffset.y;
 
       // Only trigger when near the very start of the content
       if (distanceFromStart > 96) {
+        return;
+      }
+
+      // Only trigger previous chapter when user is decelerating (velocity close to 0)
+      // This prevents skipping chapters when swiping fast
+      if (velocity && Math.abs(velocity.y) > 0.3) {
         return;
       }
 
