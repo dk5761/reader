@@ -203,24 +203,13 @@ export const ReaderVerticalList = ({
   );
 
   // Handle scroll to dynamically adjust deceleration rate near chapter boundaries
-  const handleScroll = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, layoutMeasurement } = event.nativeEvent;
-      const scrollY = contentOffset.y;
-
-      // Calculate current visible index based on scroll position
-      // This is an approximation - we use the first visible item
-      const firstVisibleIndex = Math.floor(scrollY / 300); // Approximate page height
-
-      // Adjust deceleration rate when near chapter boundaries
-      if (isNearChapterBoundary(firstVisibleIndex)) {
-        setDecelerationRate("fast");
-      } else {
-        setDecelerationRate("normal");
-      }
-    },
-    [isNearChapterBoundary]
-  );
+  const handleScroll = useCallback(() => {
+    if (isNearChapterBoundary(lastVisibleIndexRef.current)) {
+      setDecelerationRate("fast");
+    } else {
+      setDecelerationRate("normal");
+    }
+  }, [isNearChapterBoundary]);
 
   const renderItem = useCallback(
     ({ item }: { item: ReaderFlatPage }) => (
