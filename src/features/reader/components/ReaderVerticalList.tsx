@@ -1,5 +1,5 @@
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { NativeScrollEvent, NativeSyntheticEvent, ViewToken } from "react-native";
 import type { ReaderFlatPage } from "../types/reader.types";
 import { ReaderPageItem } from "./ReaderPageItem";
@@ -14,6 +14,9 @@ interface ReaderVerticalListProps {
   onTapPage: () => void;
   onScrollBeginDrag: () => void;
 }
+
+// Number of pages from the end of a chapter where we increase deceleration
+const PAGES_BEFORE_CHAPTER_END_TO_DECELERATE = 5;
 
 export const ReaderVerticalList = ({
   pages,
@@ -30,6 +33,7 @@ export const ReaderVerticalList = ({
   const lastRequestedIndexRef = useRef<number | null>(null);
   const lastNearEndTokenRef = useRef<string | null>(null);
   const lastNearStartTokenRef = useRef<string | null>(null);
+  const [decelerationRate, setDecelerationRate] = useState<"normal" | "fast">("normal");
 
   const safeInitialIndex = useMemo(() => {
     if (pages.length === 0) {
@@ -169,6 +173,55 @@ export const ReaderVerticalList = ({
     [onNearStart, pages.length]
   );
 
+  // Check if current position is near a chapter boundary (end of a chapter)
+  const isNearChapterBoundary = useCallback(
+    (currentIndex: number): boolean => {
+      if (pages.length === 0) {
+        return false;
+      }
+
+      // Get the current page's chapter info
+      const currentPage = pages[currentIndex];
+      if (!currentPage) {
+        return false;
+      }
+
+      // Find the last page index of the current chapter
+      let lastPageIndexOfCurrentChapter = currentIndex;
+      for (let i = currentIndex + 1; i < pages.length; i++) {
+        if (pages[i].chapterId !== currentPage.chapterId) {
+          break;
+        }
+        lastPageIndexOfCurrentChapter = i;
+      }
+
+      // Check if we're within PAGES_BEFORE_CHAPTER_END_TO_DECELERATE pages of the chapter end
+      const distanceFromChapterEnd = lastPageIndexOfCurrentChapter - currentIndex;
+      return distanceFromChapterEnd <= PAGES_BEFORE_CHAPTER_END_TO_DECELERATE;
+    },
+    [pages]
+  );
+
+  // Handle scroll to dynamically adjust deceleration rate near chapter boundaries
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement } = event.nativeEvent;
+      const scrollY = contentOffset.y;
+
+      // Calculate current visible index based on scroll position
+      // This is an approximation - we use the first visible item
+      const firstVisibleIndex = Math.floor(scrollY / 300); // Approximate page height
+
+      // Adjust deceleration rate when near chapter boundaries
+      if (isNearChapterBoundary(firstVisibleIndex)) {
+        setDecelerationRate("fast");
+      } else {
+        setDecelerationRate("normal");
+      }
+    },
+    [isNearChapterBoundary]
+  );
+
   const renderItem = useCallback(
     ({ item }: { item: ReaderFlatPage }) => (
       <ReaderPageItem
@@ -197,7 +250,9 @@ export const ReaderVerticalList = ({
         maybeTriggerNearStart(event);
         onScrollBeginDrag();
       }}
-      scrollEventThrottle={120}
+      onScroll={handleScroll}
+      decelerationRate={decelerationRate}
+      scrollEventThrottle={16}
       showsVerticalScrollIndicator={false}
     />
   );
