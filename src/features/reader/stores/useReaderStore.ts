@@ -23,7 +23,6 @@ interface InitializeReaderSessionInput {
   initialChapter: SourceChapter;
   initialPages: SourcePage[];
   initialPageIndex: number;
-  initialMode?: ReaderMode;
 }
 
 interface ReaderStoreState {
@@ -65,10 +64,8 @@ interface ReaderStoreState {
   resetChapterViewState: () => void;
   pruneVerticalWindow: () => void;
   setCurrentFlatIndex: (index: number) => void;
-  setCurrentHorizontalPosition: (chapterId: string, pageIndex: number) => void;
   // Atomic position update that sets all position-related state at once
   setCurrentPositionAtomic: (chapterId: string, pageIndex: number, flatIndex: number) => void;
-  setMode: (mode: ReaderMode) => void;
   toggleOverlay: () => void;
   showOverlay: () => void;
   hideOverlay: () => void;
@@ -122,7 +119,7 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
     );
 
     set({
-      mode: input.initialMode ?? "vertical",
+      mode: "vertical",
       sessionKey: input.sessionKey,
       meta: input.meta,
       chapters: input.chapters,
@@ -327,10 +324,6 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
 
   pruneVerticalWindow: () => {
     set((state) => {
-      if (state.mode !== "vertical") {
-        return state;
-      }
-
       const keptChapters = calculateKeptChapters(
         state.loadedChapters,
         state.currentChapterId,
@@ -387,32 +380,6 @@ export const useReaderStore = create<ReaderStoreState>((set) => ({
         currentPageIndex: currentPage?.pageIndex ?? state.currentPageIndex,
       };
     });
-  },
-
-  setCurrentHorizontalPosition: (chapterId, pageIndex) => {
-    set((state) => {
-      const loadedChapter = state.loadedChapters.find(
-        (entry) => entry.chapter.id === chapterId
-      );
-      const safePageIndex = Math.max(
-        0,
-        Math.min(pageIndex, Math.max(0, (loadedChapter?.pages.length ?? 1) - 1))
-      );
-      const nextFlatIndex = state.flatPages.findIndex(
-        (entry) => entry.chapterId === chapterId && entry.pageIndex === safePageIndex
-      );
-
-      return {
-        ...state,
-        currentChapterId: chapterId,
-        currentPageIndex: safePageIndex,
-        currentFlatIndex: nextFlatIndex >= 0 ? nextFlatIndex : state.currentFlatIndex,
-      };
-    });
-  },
-
-  setMode: (mode) => {
-    set((state) => ({ ...state, mode }));
   },
 
   toggleOverlay: () => {

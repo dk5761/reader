@@ -1,4 +1,4 @@
-export type ReaderDefaultMode = "vertical" | "horizontal";
+export type ReaderDefaultMode = "vertical";
 
 export interface AppSettings {
   allowNsfwSources: boolean;

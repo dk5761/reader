@@ -4,7 +4,7 @@ import type {
   SourcePage,
 } from "@/services/source";
 
-export type ReaderMode = "horizontal" | "vertical";
+export type ReaderMode = "vertical";
 
 export interface ReaderSessionParams {
   sourceId: string;

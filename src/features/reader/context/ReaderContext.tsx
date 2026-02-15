@@ -32,8 +32,6 @@ interface ReaderContextValue {
   appendChapterPages: ReturnType<typeof useReaderStore.getState>["appendChapterPages"];
   pruneVerticalWindow: ReturnType<typeof useReaderStore.getState>["pruneVerticalWindow"];
   setCurrentFlatIndex: ReturnType<typeof useReaderStore.getState>["setCurrentFlatIndex"];
-  setCurrentHorizontalPosition: ReturnType<typeof useReaderStore.getState>["setCurrentHorizontalPosition"];
-  setMode: ReturnType<typeof useReaderStore.getState>["setMode"];
   toggleOverlay: ReturnType<typeof useReaderStore.getState>["toggleOverlay"];
   showOverlay: ReturnType<typeof useReaderStore.getState>["showOverlay"];
   hideOverlay: ReturnType<typeof useReaderStore.getState>["hideOverlay"];
@@ -65,7 +63,7 @@ interface ReaderProviderProps {
  * }
  *
  * function ReaderContent() {
- *   const { currentFlatPage, setMode } = useReaderContext();
+ *   const { currentFlatPage } = useReaderContext();
  *   // ...
  * }
  * ```
@@ -101,8 +99,6 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
     appendChapterPages: store.appendChapterPages,
     pruneVerticalWindow: store.pruneVerticalWindow,
     setCurrentFlatIndex: store.setCurrentFlatIndex,
-    setCurrentHorizontalPosition: store.setCurrentHorizontalPosition,
-    setMode: store.setMode,
     toggleOverlay: store.toggleOverlay,
     showOverlay: store.showOverlay,
     hideOverlay: store.hideOverlay,
@@ -127,8 +123,8 @@ export function ReaderProvider({ children }: ReaderProviderProps) {
  * @example
  * ```tsx
  * function ReaderPage() {
- *   const { mode, setMode } = useReaderContext();
- *   return <button onClick={() => setMode(mode === 'vertical' ? 'horizontal' : 'vertical')}>Toggle</button>;
+ *   const { mode } = useReaderContext();
+ *   return <p>Mode: {mode}</p>;
  * }
  * ```
  */

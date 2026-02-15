@@ -10,7 +10,7 @@ const APP_SETTINGS_SINGLETON_ID = 1;
 const GLOBAL_SEARCH_SETTINGS_SINGLETON_ID = 1;
 
 const isReaderDefaultMode = (value: string): value is ReaderDefaultMode =>
-  value === "vertical" || value === "horizontal";
+  value === "vertical";
 
 const normalizeReaderDefaultMode = (value: string | null | undefined): ReaderDefaultMode =>
   value && isReaderDefaultMode(value) ? value : "vertical";

@@ -3,13 +3,11 @@ import { Switch } from "heroui-native";
 import { useMemo } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
-import type { ReaderDefaultMode } from "@/services/settings";
 import {
   ActionPillButton,
   CenteredLoadingState,
   CenteredState,
   ScreenHeader,
-  SelectableChip,
 } from "@/shared/ui";
 import {
   appSettingsQueryOptions,
@@ -64,7 +62,6 @@ export default function SettingsScreen() {
 
   const updateSetting = (input: {
     allowNsfwSources?: boolean;
-    defaultReaderMode?: ReaderDefaultMode;
   }) => {
     updateSettingsMutation.mutate(input);
   };
@@ -100,29 +97,6 @@ export default function SettingsScreen() {
                 updateSetting({ allowNsfwSources: isSelected });
               }}
             />
-          </View>
-        </View>
-
-        <View className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4">
-          <Text className="text-base font-semibold text-white">Reader</Text>
-          <Text className="mt-1 text-xs text-[#9B9CA6]">
-            Default mode used when opening a new reader session.
-          </Text>
-
-          <View className="mt-3 flex-row gap-2">
-            {(["vertical", "horizontal"] as const).map((mode) => (
-              <SelectableChip
-                key={mode}
-                label={mode === "vertical" ? "Vertical" : "Horizontal"}
-                selected={effectiveSettings?.defaultReaderMode === mode}
-                onPress={() => {
-                  if (updateSettingsMutation.isPending) {
-                    return;
-                  }
-                  updateSetting({ defaultReaderMode: mode });
-                }}
-              />
-            ))}
           </View>
         </View>
 
