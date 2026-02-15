@@ -330,7 +330,7 @@ const parseChapters = (html: string): SourceChapter[] => {
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const decodeBase64 = (value: string): string => {
+const decodeBase64Binary = (value: string): string => {
   if (typeof globalThis.atob === "function") {
     return globalThis.atob(value);
   }
@@ -338,10 +338,28 @@ const decodeBase64 = (value: string): string => {
   throw new Error("atob is not available in this runtime.");
 };
 
+// The site's reader script decodes with decodeURIComponent(escape(atob(...))).
+// This reproduces that behavior without relying on deprecated global escape().
+const decodeBase64Utf8 = (value: string): string => {
+  const binary = decodeBase64Binary(value);
+  let percentEncoded = "";
+
+  for (let index = 0; index < binary.length; index += 1) {
+    const hex = binary.charCodeAt(index).toString(16).padStart(2, "0");
+    percentEncoded += `%${hex}`;
+  }
+
+  return decodeURIComponent(percentEncoded);
+};
+
 const decodeImageUrl = (rawPath: string): string | null => {
   try {
     let value = rawPath;
 
+    // Current site scripts replace this token with "e" before decode.
+    value = value.replace(/RN__tgVzmZ_/g, "e");
+
+    // Legacy token replacements kept as fallback across mirror/script variants.
     value = value.replace(/\w{5}__\w{3}__/g, "g");
     value = value.replace(/\w{2}__\w{6}_/g, "a");
 
@@ -381,7 +399,7 @@ const decodeImageUrl = (rawPath: string): string | null => {
     const trimmedLength = Math.max(transformed.length - 11, 0);
     transformed = transformed.substring(0, trimmedLength) + transformed.slice(-2);
 
-    const decoded = decodeURIComponent(decodeBase64(transformed));
+    const decoded = decodeBase64Utf8(transformed);
     if (decoded.length < 17) {
       return null;
     }
