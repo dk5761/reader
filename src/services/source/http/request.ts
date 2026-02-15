@@ -13,7 +13,7 @@ import type {
 import { sourceHttpClient } from "./client";
 
 const resolveResponseType = (
-  responseType?: SourceRequestOptions["responseType"]
+  responseType?: SourceRequestOptions["responseType"],
 ): ResponseType | undefined => {
   if (!responseType) {
     return undefined;
@@ -31,7 +31,7 @@ const resolveResponseType = (
 };
 
 const normalizeHeaders = (
-  headers: RawAxiosResponseHeaders | AxiosResponse["headers"]
+  headers: RawAxiosResponseHeaders | AxiosResponse["headers"],
 ): Record<string, string> => {
   const normalized: Record<string, string> = {};
 
@@ -56,8 +56,45 @@ const mapResponse = <T>(response: AxiosResponse<T>): SourceResponse<T> => ({
   finalUrl: response.request?.responseURL ?? response.config.url ?? "",
 });
 
+// const rewriteLegacySourceUrl = (url: string): string => {
+//   const value = url.trim();
+//   if (!value) {
+//     return value;
+//   }
+
+//   try {
+//     const parsed = new URL(value);
+//     const isManhwa18Host =
+//       parsed.hostname === "manhwa18.net" || parsed.hostname === "www.manhwa18.net";
+
+//     if (isManhwa18Host && parsed.pathname === "/tim-kiem") {
+//       parsed.pathname = "/manga-list";
+//       return parsed.toString();
+//     }
+
+//     return value;
+//   } catch {
+//     if (value.startsWith("https://manhwa18.net/tim-kiem")) {
+//       return value.replace("https://manhwa18.net/tim-kiem", "https://manhwa18.net/manga-list");
+//     }
+
+//     if (value.startsWith("https://www.manhwa18.net/tim-kiem")) {
+//       return value.replace(
+//         "https://www.manhwa18.net/tim-kiem",
+//         "https://www.manhwa18.net/manga-list"
+//       );
+//     }
+
+//     if (value.startsWith("/tim-kiem")) {
+//       return value.replace(/^\/tim-kiem/, "/manga-list");
+//     }
+
+//     return value;
+//   }
+// };
+
 const requestSource = async <T>(
-  options: SourceRequestOptions
+  options: SourceRequestOptions,
 ): Promise<SourceResponse<T>> => {
   const config: AxiosRequestConfig = {
     url: options.url,
