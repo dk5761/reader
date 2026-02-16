@@ -12,6 +12,7 @@ import {
   readingProgress,
   appSettings,
   globalSearchSettings,
+  libraryUpdateFeedState,
 } from "@/services/db";
 import type { BackupData } from "./backup.types";
 
@@ -73,6 +74,11 @@ const getAllLibraryUpdateEvents = () => {
   return db.select().from(libraryUpdateEvents).all();
 };
 
+const getLibraryUpdateFeedState = () => {
+  const db = getDatabase();
+  return db.select().from(libraryUpdateFeedState).all();
+};
+
 export const exportDatabase = (): BackupData => {
   const version = Constants.expoConfig?.version ?? "1.0.0";
   const createdAt = new Date().toISOString();
@@ -89,6 +95,7 @@ export const exportDatabase = (): BackupData => {
     global_search_settings: getGlobalSearchSettings(),
     library_update_state: getAllLibraryUpdateState(),
     library_update_events: getAllLibraryUpdateEvents(),
+    library_update_feed_state: getLibraryUpdateFeedState(),
   };
 
   return {

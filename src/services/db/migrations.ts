@@ -196,4 +196,17 @@ CREATE INDEX IF NOT EXISTS library_update_events_detected_at_idx
 
 CREATE INDEX IF NOT EXISTS library_update_events_source_manga_detected_at_idx
   ON library_update_events (source_id, manga_id, detected_at);
+
+CREATE TABLE IF NOT EXISTS library_update_feed_state (
+  id INTEGER PRIMARY KEY NOT NULL,
+  last_seen_event_id INTEGER,
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO library_update_feed_state (id, last_seen_event_id, updated_at)
+VALUES (
+  1,
+  (SELECT id FROM library_update_events ORDER BY id DESC LIMIT 1),
+  CAST(strftime('%s', 'now') AS INTEGER) * 1000
+);
 `;

@@ -211,6 +211,12 @@ export const libraryUpdateEvents = sqliteTable(
   ]
 );
 
+export const libraryUpdateFeedState = sqliteTable("library_update_feed_state", {
+  id: integer("id").primaryKey(),
+  lastSeenEventId: integer("last_seen_event_id"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
 export type LibraryEntryRow = typeof libraryEntries.$inferSelect;
 export type LibraryCategoryRow = typeof libraryCategories.$inferSelect;
 export type LibraryEntryCategoryRow = typeof libraryEntryCategories.$inferSelect;
@@ -222,3 +228,4 @@ export type AppSettingsRow = typeof appSettings.$inferSelect;
 export type GlobalSearchSettingsRow = typeof globalSearchSettings.$inferSelect;
 export type LibraryUpdateStateRow = typeof libraryUpdateState.$inferSelect;
 export type LibraryUpdateEventRow = typeof libraryUpdateEvents.$inferSelect;
+export type LibraryUpdateFeedStateRow = typeof libraryUpdateFeedState.$inferSelect;

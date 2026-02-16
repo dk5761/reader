@@ -65,6 +65,10 @@ export default function RootLayout() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
+                          name="updates"
+                          options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
                           name="reader/[sourceId]/[mangaId]/[chapterId]"
                           options={{ headerShown: false }}
                         />

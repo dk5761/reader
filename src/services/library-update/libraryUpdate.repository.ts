@@ -1,8 +1,16 @@
-import { and, desc, eq } from "drizzle-orm";
-import { getDatabase, libraryUpdateEvents, libraryUpdateState } from "@/services/db";
+import { and, desc, eq, gt, gte, lt } from "drizzle-orm";
+import {
+  getDatabase,
+  libraryUpdateEvents,
+  libraryUpdateFeedState,
+  libraryUpdateState,
+} from "@/services/db";
 import type {
+  GetLibraryUpdateEventsPageInput,
   InsertLibraryUpdateEventInput,
   LibraryUpdateEventEntry,
+  LibraryUpdateEventsPage,
+  LibraryUpdateFeedStateEntry,
   LibraryUpdateStateEntry,
   UpsertLibraryUpdateStateInput,
 } from "./libraryUpdate.types";
@@ -40,6 +48,62 @@ const mapLibraryUpdateEvent = (
   detectionMode: entry.detectionMode as LibraryUpdateEventEntry["detectionMode"],
   detectedAt: entry.detectedAt,
 });
+
+const mapLibraryUpdateFeedState = (
+  entry: typeof libraryUpdateFeedState.$inferSelect
+): LibraryUpdateFeedStateEntry => ({
+  id: entry.id,
+  lastSeenEventId: entry.lastSeenEventId ?? undefined,
+  updatedAt: entry.updatedAt,
+});
+
+const FEED_STATE_SINGLETON_ID = 1;
+const DEFAULT_EVENTS_PAGE_SIZE = 30;
+
+const ensureLibraryUpdateFeedState = (): LibraryUpdateFeedStateEntry => {
+  const db = getDatabase();
+  const existing = db
+    .select()
+    .from(libraryUpdateFeedState)
+    .where(eq(libraryUpdateFeedState.id, FEED_STATE_SINGLETON_ID))
+    .limit(1)
+    .get();
+
+  if (existing) {
+    return mapLibraryUpdateFeedState(existing);
+  }
+
+  const latestEventId = getLatestLibraryUpdateEventId();
+  const now = Date.now();
+
+  db.insert(libraryUpdateFeedState)
+    .values({
+      id: FEED_STATE_SINGLETON_ID,
+      lastSeenEventId: latestEventId,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({
+      target: libraryUpdateFeedState.id,
+    })
+    .run();
+
+  const ensured = db
+    .select()
+    .from(libraryUpdateFeedState)
+    .where(eq(libraryUpdateFeedState.id, FEED_STATE_SINGLETON_ID))
+    .limit(1)
+    .get();
+
+  if (ensured) {
+    return mapLibraryUpdateFeedState(ensured);
+  }
+
+  return {
+    id: FEED_STATE_SINGLETON_ID,
+    lastSeenEventId: latestEventId ?? undefined,
+    updatedAt: now,
+  };
+};
 
 export const getLibraryUpdateState = (
   sourceId: string,
@@ -125,6 +189,91 @@ export const getRecentLibraryUpdateEvents = (limit = 20): LibraryUpdateEventEntr
     .all();
 
   return entries.map(mapLibraryUpdateEvent);
+};
+
+export const getLatestLibraryUpdateEventId = (): number | null => {
+  const db = getDatabase();
+  const latest = db
+    .select({ id: libraryUpdateEvents.id })
+    .from(libraryUpdateEvents)
+    .orderBy(desc(libraryUpdateEvents.id))
+    .limit(1)
+    .get();
+
+  return latest?.id ?? null;
+};
+
+export const getLibraryUpdateFeedState = (): LibraryUpdateFeedStateEntry =>
+  ensureLibraryUpdateFeedState();
+
+export const setLibraryUpdateFeedLastSeenEventId = (
+  lastSeenEventId: number | null
+): LibraryUpdateFeedStateEntry => {
+  const db = getDatabase();
+  const now = Date.now();
+
+  ensureLibraryUpdateFeedState();
+
+  db.update(libraryUpdateFeedState)
+    .set({
+      lastSeenEventId,
+      updatedAt: now,
+    })
+    .where(eq(libraryUpdateFeedState.id, FEED_STATE_SINGLETON_ID))
+    .run();
+
+  return ensureLibraryUpdateFeedState();
+};
+
+export const getLibraryUpdateEventsPage = (
+  input: GetLibraryUpdateEventsPageInput = {}
+): LibraryUpdateEventsPage => {
+  const db = getDatabase();
+  const safeLimit = Math.max(1, input.limit ?? DEFAULT_EVENTS_PAGE_SIZE);
+  const whereConditions = [];
+
+  if (input.cursor !== undefined && input.cursor !== null) {
+    whereConditions.push(lt(libraryUpdateEvents.id, input.cursor));
+  }
+
+  if (input.sourceId) {
+    whereConditions.push(eq(libraryUpdateEvents.sourceId, input.sourceId));
+  }
+
+  if (input.detectedAfterTs !== undefined) {
+    whereConditions.push(gte(libraryUpdateEvents.detectedAt, input.detectedAfterTs));
+  }
+
+  if (
+    input.unreadOnly &&
+    input.lastSeenEventId !== undefined &&
+    input.lastSeenEventId !== null
+  ) {
+    whereConditions.push(gt(libraryUpdateEvents.id, input.lastSeenEventId));
+  }
+
+  const entries = db
+    .select()
+    .from(libraryUpdateEvents)
+    .where(whereConditions.length > 0 ? and(...whereConditions) : undefined)
+    .orderBy(desc(libraryUpdateEvents.id))
+    .limit(safeLimit + 1)
+    .all();
+
+  const hasMore = entries.length > safeLimit;
+  const pageEntries = hasMore ? entries.slice(0, safeLimit) : entries;
+  const items = pageEntries.map(mapLibraryUpdateEvent);
+  const nextCursor = hasMore ? pageEntries[pageEntries.length - 1]?.id ?? null : null;
+
+  return {
+    items,
+    nextCursor,
+  };
+};
+
+export const markLibraryUpdatesSeenToLatest = (): LibraryUpdateFeedStateEntry => {
+  const latestEventId = getLatestLibraryUpdateEventId();
+  return setLibraryUpdateFeedLastSeenEventId(latestEventId);
 };
 
 export const getLatestUpdateEventForManga = (

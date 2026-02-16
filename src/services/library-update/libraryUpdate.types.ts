@@ -44,6 +44,26 @@ export interface LibraryUpdateEventEntry {
   detectedAt: number;
 }
 
+export interface LibraryUpdateFeedStateEntry {
+  id: number;
+  lastSeenEventId?: number;
+  updatedAt: number;
+}
+
+export interface GetLibraryUpdateEventsPageInput {
+  cursor?: number;
+  limit?: number;
+  sourceId?: string;
+  detectedAfterTs?: number;
+  unreadOnly?: boolean;
+  lastSeenEventId?: number | null;
+}
+
+export interface LibraryUpdateEventsPage {
+  items: LibraryUpdateEventEntry[];
+  nextCursor: number | null;
+}
+
 export interface InsertLibraryUpdateEventInput {
   sourceId: string;
   mangaId: string;

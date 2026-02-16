@@ -1,4 +1,3 @@
-import { and, eq } from "drizzle-orm";
 import {
   getDatabase,
   getSQLiteDatabase,
@@ -13,36 +12,9 @@ import {
   readingProgress,
   appSettings,
   globalSearchSettings,
+  libraryUpdateFeedState,
 } from "@/services/db";
 import type { BackupData, BackupTables } from "./backup.types";
-
-const restoreTable = <T extends { id: number }>(
-  table: any,
-  data: T[],
-  getId: (item: T) => number
-) => {
-  if (data.length === 0) {
-    return;
-  }
-
-  const db = getDatabase();
-  const sqliteDb = getSQLiteDatabase();
-
-  sqliteDb.withTransactionSync(() => {
-    data.forEach((item) => {
-      const { id, ...dataWithoutId } = item as any;
-      db.insert(table)
-        .values(dataWithoutId)
-        .onConflictDoUpdate({
-          target: table.id,
-          set: {
-            ...dataWithoutId,
-          },
-        })
-        .run();
-    });
-  });
-};
 
 const restoreLibraryEntries = (entries: BackupTables["library_entries"]) => {
   if (entries.length === 0) {
@@ -338,6 +310,33 @@ const restoreLibraryUpdateEvents = (
   });
 };
 
+const restoreLibraryUpdateFeedState = (
+  state: BackupTables["library_update_feed_state"]
+) => {
+  if (state.length === 0) {
+    return;
+  }
+
+  const db = getDatabase();
+
+  state.forEach((s) => {
+    db.insert(libraryUpdateFeedState)
+      .values({
+        id: 1,
+        lastSeenEventId: s.lastSeenEventId,
+        updatedAt: s.updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: libraryUpdateFeedState.id,
+        set: {
+          lastSeenEventId: s.lastSeenEventId,
+          updatedAt: s.updatedAt,
+        },
+      })
+      .run();
+  });
+};
+
 export const importDatabase = (data: BackupData): void => {
   const { tables } = data;
 
@@ -353,4 +352,5 @@ export const importDatabase = (data: BackupData): void => {
   restoreLibraryViewSettings(tables.library_view_settings);
   restoreLibraryUpdateState(tables.library_update_state);
   restoreLibraryUpdateEvents(tables.library_update_events);
+  restoreLibraryUpdateFeedState(tables.library_update_feed_state ?? []);
 };

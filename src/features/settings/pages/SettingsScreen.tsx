@@ -14,7 +14,6 @@ import {
   useUpdateAppSettingsMutation,
 } from "../api";
 import { AppUpdateCard } from "../components/AppUpdateCard";
-import { LibraryUpdateCard } from "../components/LibraryUpdateCard";
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -100,7 +99,17 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <LibraryUpdateCard />
+        <TouchableOpacity
+          className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"
+          onPress={() => {
+            router.push("/updates");
+          }}
+        >
+          <Text className="text-base font-semibold text-white">Updates</Text>
+          <Text className="mt-1 text-xs text-[#9B9CA6]">
+            View update feed and run library refresh.
+          </Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"

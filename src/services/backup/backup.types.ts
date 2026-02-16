@@ -10,6 +10,7 @@ import type {
   GlobalSearchSettingsRow,
   LibraryUpdateStateRow,
   LibraryUpdateEventRow,
+  LibraryUpdateFeedStateRow,
 } from "@/services/db/schema";
 
 export interface BackupData {
@@ -30,6 +31,7 @@ export interface BackupTables {
   global_search_settings: GlobalSearchSettingsRow[];
   library_update_state: LibraryUpdateStateRow[];
   library_update_events: LibraryUpdateEventRow[];
+  library_update_feed_state: LibraryUpdateFeedStateRow[];
 }
 
 export interface BackupMetadata {
