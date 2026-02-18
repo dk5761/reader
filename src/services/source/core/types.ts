@@ -42,6 +42,9 @@ export interface SourcePage {
   index: number;
   imageUrl: string;
   headers?: Record<string, string>;
+  // Optional dimensions for aspect ratio calculation
+  width?: number;
+  height?: number;
 }
 
 export interface SourcePagedResult<T> {
