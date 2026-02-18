@@ -1,13 +1,45 @@
 import { useRef, useEffect, useCallback } from "react";
 import { FlatList, StyleSheet, ViewToken } from "react-native";
+import { Image } from "expo-image";
 import { ReaderPageComponent } from "./ReaderPage";
 import { useReaderStore } from "@/services/reader";
 import type { ReaderPage as ReaderPageType } from "@/services/reader";
+
+const PRELOAD_AHEAD_PAGES = 4;
 
 export function WebtoonReader() {
   const { chapter, currentPageIndex, setCurrentPage } = useReaderStore();
   const flatListRef = useRef<FlatList<ReaderPageType>>(null);
   const isInitialScrollDone = useRef(false);
+  const lastPrefetchedIndex = useRef(-1);
+
+  // Prefetch images for upcoming pages
+  const prefetchPages = useCallback(
+    (pageIndex: number) => {
+      if (!chapter) return;
+
+      // Don't prefetch if already prefetched up to this point
+      if (pageIndex >= lastPrefetchedIndex.current) {
+        const startIndex = lastPrefetchedIndex.current + 1;
+        const endIndex = Math.min(
+          pageIndex + PRELOAD_AHEAD_PAGES,
+          chapter.pages.length - 1
+        );
+
+        if (startIndex <= endIndex) {
+          const urlsToPrefetch = chapter.pages
+            .slice(startIndex, endIndex + 1)
+            .map((page) => page.imageUrl);
+
+          if (urlsToPrefetch.length > 0) {
+            Image.prefetch(urlsToPrefetch);
+            lastPrefetchedIndex.current = endIndex;
+          }
+        }
+      }
+    },
+    [chapter]
+  );
 
   useEffect(() => {
     if (chapter && currentPageIndex > 0 && flatListRef.current && !isInitialScrollDone.current) {
@@ -19,11 +51,13 @@ export function WebtoonReader() {
             animated: false,
           });
           isInitialScrollDone.current = true;
+          // Prefetch pages after initial scroll
+          prefetchPages(currentPageIndex);
         }
       }, 100);
       return () => clearTimeout(timeout);
     }
-  }, [chapter, currentPageIndex]);
+  }, [chapter, currentPageIndex, prefetchPages]);
 
   const onScrollToIndexFailed = useCallback(
     (info: { index: number; highestMeasuredFrameIndex: number; averageItemLength: number }) => {
@@ -43,10 +77,12 @@ export function WebtoonReader() {
         const firstVisible = viewableItems[0];
         if (firstVisible.index !== undefined && firstVisible.index !== null) {
           setCurrentPage(firstVisible.index);
+          // Prefetch upcoming pages
+          prefetchPages(firstVisible.index);
         }
       }
     },
-    [setCurrentPage]
+    [setCurrentPage, prefetchPages]
   );
 
   const viewabilityConfig = {

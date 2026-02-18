@@ -9,24 +9,6 @@ interface ReaderPageProps {
   page: ReaderPageType;
 }
 
-function CircularLoader({ size = 24 }: { size?: number }) {
-  return (
-    <View style={styles.loaderContainer}>
-      <View
-        style={[
-          styles.loader,
-          {
-            width: size,
-            height: size,
-            borderRadius: size / 2,
-            borderWidth: 2,
-          },
-        ]}
-      />
-    </View>
-  );
-}
-
 export function ReaderPageComponent({ page }: ReaderPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -100,9 +82,8 @@ export function ReaderPageComponent({ page }: ReaderPageProps) {
     <View style={styles.container}>
       {isLoading && (
         <View style={[styles.placeholder, { height: placeholderHeight }]}>
-          <CircularLoader size={28} />
-          <Text className="mt-2 text-xs text-[#9B9CA6]">
-            Page {page.index + 1}
+          <Text className="text-2xl font-bold text-white">
+            {page.index + 1}
           </Text>
         </View>
       )}
@@ -137,14 +118,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#16171A",
-  },
-  loaderContainer: {
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loader: {
-    borderColor: "#67A4FF",
-    borderTopColor: "transparent",
   },
   errorContainer: {
     width: SCREEN_WIDTH,
