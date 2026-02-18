@@ -24,8 +24,7 @@ export default function ReaderScreen() {
     ? parseInt(params.initialPage[0], 10)
     : parseInt(params.initialPage || "0", 10);
 
-  const { setChapter, setCurrentPage, setLoading, setError, isLoading, error, chapter } =
-    useReaderStore();
+  const { setChapter, setCurrentPage, chapter } = useReaderStore();
 
   const chapterPagesQuery = useQuery({
     queryKey: sourceQueryFactory.chapterPages(sourceId, chapterId),
@@ -33,18 +32,6 @@ export default function ReaderScreen() {
     staleTime: Infinity,
     enabled: Boolean(sourceId && chapterId),
   });
-
-  useEffect(() => {
-    if (chapterPagesQuery.isPending) {
-      setLoading(true);
-    }
-  }, [chapterPagesQuery.isPending, setLoading]);
-
-  useEffect(() => {
-    if (chapterPagesQuery.isError) {
-      setError(chapterPagesQuery.error?.message || "Failed to load chapter");
-    }
-  }, [chapterPagesQuery.isError, chapterPagesQuery.error, setError]);
 
   useEffect(() => {
     if (chapterPagesQuery.data) {
@@ -76,7 +63,7 @@ export default function ReaderScreen() {
     }
   }, [chapterPagesQuery.data, chapterId, sourceId, mangaId, initialPage, setChapter, setCurrentPage]);
 
-  if (chapterPagesQuery.isPending || isLoading) {
+  if (chapterPagesQuery.isPending || !chapterPagesQuery.data) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -85,13 +72,13 @@ export default function ReaderScreen() {
     );
   }
 
-  if (chapterPagesQuery.isError || error) {
+  if (chapterPagesQuery.isError) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View className="flex-1 items-center justify-center bg-[#0F0F12]">
           <ReaderLoadingScreen
-            chapterTitle={error || chapterPagesQuery.error?.message || "Failed to load chapter"}
+            chapterTitle={chapterPagesQuery.error?.message || "Failed to load chapter"}
           />
         </View>
       </>
