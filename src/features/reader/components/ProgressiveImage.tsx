@@ -1,5 +1,5 @@
 import { Image, useImage } from "expo-image";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 interface ProgressiveImageProps {
@@ -26,23 +26,51 @@ export function ProgressiveImage({
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [intrinsicSize, setIntrinsicSize] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
-  // useImage only accepts onError/onLoad callbacks — no maxWidth option
-  const imageResult = useImage(uri, {
-    onError(error) {
-      console.warn("[ProgressiveImage] useImage error:", error.message);
+  const imageResult = useImage(
+    {
+      uri,
+      headers,
     },
-  });
+    {
+      onError(error) {
+        console.warn("[ProgressiveImage] useImage error:", error.message);
+      },
+    },
+  );
 
-  const imageNativeWidth = imageResult?.width;
-  const imageNativeHeight = imageResult?.height;
+  const imageDimensions = useMemo(() => {
+    if (!imageResult) return null;
+    try {
+      const resultWidth = imageResult.width;
+      const resultHeight = imageResult.height;
+      if (!resultWidth || !resultHeight) return null;
+      return { width: resultWidth, height: resultHeight };
+    } catch {
+      // Native shared object may have been released during rapid list recycling.
+      return null;
+    }
+  }, [imageResult]);
 
-  // Resolve aspect ratio: prop > derived from natural dimensions
-  const resolvedAspectRatio =
-    aspectRatio ??
-    (imageNativeWidth && imageNativeHeight
-      ? imageNativeWidth / imageNativeHeight
-      : undefined);
+  useEffect(() => {
+    if (imageDimensions) {
+      setIntrinsicSize(imageDimensions);
+    }
+  }, [imageDimensions]);
+
+  const resolvedAspectRatio = useMemo(() => {
+    if (aspectRatio) {
+      return aspectRatio;
+    }
+    if (intrinsicSize?.width && intrinsicSize?.height) {
+      return intrinsicSize.width / intrinsicSize.height;
+    }
+    return undefined;
+  }, [aspectRatio, intrinsicSize]);
 
   // Resolve height: prop > derived from width + aspect ratio > placeholder fallback
   const calculatedHeight =
@@ -75,6 +103,18 @@ export function ProgressiveImage({
     // Brief pause so the user sees 100 before the image fades in
     setTimeout(() => setIsLoading(false), 300);
   }, []);
+
+  const handleLoadWithSize = useCallback(
+    (event: { source?: { width?: number; height?: number } }) => {
+      const loadedWidth = event.source?.width;
+      const loadedHeight = event.source?.height;
+      if (loadedWidth && loadedHeight) {
+        setIntrinsicSize({ width: loadedWidth, height: loadedHeight });
+      }
+      handleLoad();
+    },
+    [handleLoad],
+  );
 
   const handleError = useCallback(() => {
     setIsLoading(false);
@@ -111,18 +151,15 @@ export function ProgressiveImage({
         </View>
       )}
 
-      {/* Image — only mount once useImage has resolved dimensions */}
-      {imageResult && (
-        <Image
-          source={{ uri, headers }}
-          style={[StyleSheet.absoluteFill, { opacity: isLoading ? 0 : 1 }]}
-          contentFit="contain"
-          onProgress={handleProgress}
-          onLoad={handleLoad}
-          onError={handleError}
-          transition={200}
-        />
-      )}
+      <Image
+        source={{ uri, headers }}
+        style={[StyleSheet.absoluteFill, { opacity: isLoading ? 0 : 1 }]}
+        contentFit="contain"
+        onProgress={handleProgress}
+        onLoad={handleLoadWithSize}
+        onError={handleError}
+        transition={200}
+      />
     </View>
   );
 }
