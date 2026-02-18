@@ -39,9 +39,6 @@ export default function ReaderScreen() {
     enabled: Boolean(sourceId && chapterId),
   });
 
-  console.log("chapterPagesQuery", chapterPagesQuery.data);
-  console.log("chapterId", chapterId, sourceId, mangaId);
-
   useEffect(() => {
     if (chapterPagesQuery.data) {
       const pages: ReaderPage[] = chapterPagesQuery.data.map((page, index) => ({
