@@ -411,6 +411,9 @@ export const comixAdapter: SourceAdapter = {
     const json = await requestJson<ComixChapterResponse>(context, url);
     const images = json.result?.images ?? [];
 
+    // Extract chapter number from chapterId
+    const chapterNumber = parseFloat(parsedChapterId);
+
     return images
       .map((image, index) => ({
         index,
@@ -418,6 +421,8 @@ export const comixAdapter: SourceAdapter = {
         headers: {
           Referer: `${COMIX_BASE_URL}/`,
         },
+        chapterTitle: `Chapter ${parsedChapterId}`,
+        chapterNumber: Number.isFinite(chapterNumber) ? chapterNumber : undefined,
       }))
       .filter((page) => Boolean(page.imageUrl));
   },

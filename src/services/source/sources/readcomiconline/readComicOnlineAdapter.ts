@@ -470,6 +470,21 @@ const decryptPageUrls = (html: string): string[] => {
 
 const parseChapterPages = async (chapterUrl: string, html: string): Promise<SourcePage[]> => {
   const imageUrls = decryptPageUrls(html);
+
+  // Try to extract chapter title from page title
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  let chapterTitle: string | undefined;
+  let chapterNumber: number | undefined;
+
+  if (titleMatch) {
+    chapterTitle = cleanText(titleMatch[1]);
+    // Extract chapter number from title (e.g., "Chapter 123" or "123")
+    const numMatch = chapterTitle.match(/(?:chapter\s*)?([+-]?(?:\d*\.)?\d+)/i);
+    if (numMatch) {
+      chapterNumber = parseFloat(numMatch[1]);
+    }
+  }
+
   const cookieHeader = await getCookieHeaderForUrl(chapterUrl);
 
   return imageUrls.map((imageUrl, index) => {
@@ -486,6 +501,8 @@ const parseChapterPages = async (chapterUrl: string, html: string): Promise<Sour
       index,
       imageUrl,
       headers,
+      chapterTitle,
+      chapterNumber,
     };
   });
 };

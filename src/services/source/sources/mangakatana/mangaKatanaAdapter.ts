@@ -310,6 +310,20 @@ const parseChapterPages = async (
     return [];
   }
 
+  // Try to extract chapter title from page title
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  let chapterTitle: string | undefined;
+  let chapterNumber: number | undefined;
+
+  if (titleMatch) {
+    chapterTitle = cleanText(titleMatch[1]);
+    // Extract chapter number from title (e.g., "Chapter 123" or "123")
+    const numMatch = chapterTitle.match(/(?:chapter\s*)?([+-]?(?:\d*\.)?\d+)/i);
+    if (numMatch) {
+      chapterNumber = parseFloat(numMatch[1]);
+    }
+  }
+
   const cookieHeader = await getCookieHeaderForUrl(chapterUrl);
 
   return urlMatches
@@ -331,6 +345,8 @@ const parseChapterPages = async (
         index,
         imageUrl,
         headers,
+        chapterTitle,
+        chapterNumber,
       };
     })
     .filter((page): page is SourcePage => Boolean(page));

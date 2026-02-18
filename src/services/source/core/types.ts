@@ -45,6 +45,9 @@ export interface SourcePage {
   // Optional dimensions for aspect ratio calculation
   width?: number;
   height?: number;
+  // Optional chapter info extracted from the page
+  chapterTitle?: string;
+  chapterNumber?: number;
 }
 
 export interface SourcePagedResult<T> {

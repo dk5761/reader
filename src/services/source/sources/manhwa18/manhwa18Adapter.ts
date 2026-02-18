@@ -425,6 +425,22 @@ const parseChapterPagesFromInertia = async (
   const page = extractInertiaPage<ChapterProps>(html);
   const chapterContent = page?.props?.chapterContent;
 
+  // Try to extract chapter title from page title
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+  let chapterTitle: string | undefined;
+  let chapterNumber: number | undefined;
+
+  if (titleMatch) {
+    const rawTitle = titleMatch[1];
+    // Title format is typically "Chapter X - Manga Title" or "Manga Name Chapter X"
+    chapterTitle = cleanText(rawTitle);
+    // Extract chapter number from title
+    const numMatch = chapterTitle.match(/chapter\s*([+-]?(?:\d*\.)?\d+)/i);
+    if (numMatch) {
+      chapterNumber = parseFloat(numMatch[1]);
+    }
+  }
+
   const imageUrls = new Set<string>();
   if (chapterContent) {
     const imageTagMatches = chapterContent.matchAll(/(?:data-src|src)\s*=\s*["']([^"']+)["']/gi);
@@ -464,6 +480,8 @@ const parseChapterPagesFromInertia = async (
       index,
       imageUrl,
       headers,
+      chapterTitle,
+      chapterNumber,
     };
   });
 };

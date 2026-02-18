@@ -54,10 +54,17 @@ export default function ReaderScreen() {
         state: { status: "ready", imageUrl: page.imageUrl },
       }));
 
+      // Extract chapter info from the first page (if available)
+      const firstPage = chapterPagesQuery.data[0];
+      const chapterTitle = firstPage?.chapterTitle;
+      const chapterNumber = firstPage?.chapterNumber;
+
       const readerChapter: ReaderChapter = {
         id: chapterId,
         sourceId,
         mangaId,
+        title: chapterTitle,
+        number: chapterNumber,
         pages,
         state: { status: "loaded" },
       };
