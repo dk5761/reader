@@ -1,7 +1,8 @@
-import { useRef, useEffect, useCallback } from "react";
-import { FlatList, StyleSheet, ViewToken } from "react-native";
+import { useRef, useEffect, useCallback, useState } from "react";
+import { FlatList, StyleSheet, ViewToken, View } from "react-native";
 import { Image } from "expo-image";
 import { ReaderPageComponent } from "./ReaderPage";
+import { ReaderOverlay } from "./ReaderOverlay";
 import { useReaderStore } from "@/services/reader";
 import type { ReaderPage as ReaderPageType } from "@/services/reader";
 
@@ -12,6 +13,9 @@ export function WebtoonReader() {
   const flatListRef = useRef<FlatList<ReaderPageType>>(null);
   const isInitialScrollDone = useRef(false);
   const lastPrefetchedIndex = useRef(-1);
+  const [overlayVisible, setOverlayVisible] = useState(false);
+  const touchStartTime = useRef<number>(0);
+  const isScrollRef = useRef(false);
 
   // Prefetch images for upcoming pages
   const prefetchPages = useCallback(
@@ -89,26 +93,55 @@ export function WebtoonReader() {
     itemVisiblePercentThreshold: 50,
   };
 
+  const onTouchStart = useCallback(() => {
+    touchStartTime.current = Date.now();
+    isScrollRef.current = false;
+  }, []);
+
+  const handleTap = useCallback(() => {
+    const touchDuration = Date.now() - touchStartTime.current;
+    // Only treat as tap if touch was short (< 200ms) and not scrolling
+    if (touchDuration < 200 && !isScrollRef.current) {
+      setOverlayVisible((prev) => !prev);
+    }
+  }, []);
+
+  const onScrollBegin = useCallback(() => {
+    isScrollRef.current = true;
+  }, []);
+
   if (!chapter) {
     return null;
   }
 
   return (
-    <FlatList
-      ref={flatListRef}
-      data={chapter.pages}
-      keyExtractor={(item) => item.pageId}
-      renderItem={({ item }) => <ReaderPageComponent page={item} />}
-      showsVerticalScrollIndicator={false}
-      onViewableItemsChanged={onViewableItemsChanged}
-      viewabilityConfig={viewabilityConfig}
-      onScrollToIndexFailed={onScrollToIndexFailed}
-      initialNumToRender={3}
-      maxToRenderPerBatch={5}
-      windowSize={10}
-      removeClippedSubviews={true}
-      style={styles.container}
-    />
+    <View style={styles.container}>
+      {overlayVisible && chapter && (
+        <ReaderOverlay
+          chapterId={chapter.id}
+          chapterNumber={chapter.number}
+        />
+      )}
+      <FlatList
+        ref={flatListRef}
+        data={chapter.pages}
+        keyExtractor={(item) => item.pageId}
+        renderItem={({ item }) => <ReaderPageComponent page={item} />}
+        showsVerticalScrollIndicator={false}
+        onViewableItemsChanged={onViewableItemsChanged}
+        viewabilityConfig={viewabilityConfig}
+        onScrollToIndexFailed={onScrollToIndexFailed}
+        onScrollBeginDrag={onScrollBegin}
+        onMomentumScrollBegin={onScrollBegin}
+        onTouchStart={onTouchStart}
+        onTouchEnd={handleTap}
+        initialNumToRender={3}
+        maxToRenderPerBatch={5}
+        windowSize={10}
+        removeClippedSubviews={true}
+        style={styles.list}
+      />
+    </View>
   );
 }
 
@@ -116,5 +149,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0F0F12",
+  },
+  list: {
+    flex: 1,
   },
 });

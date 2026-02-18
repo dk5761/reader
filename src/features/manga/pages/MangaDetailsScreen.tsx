@@ -173,6 +173,8 @@ export default function MangaDetailsScreen() {
       return true;
     });
   }, [chaptersQuery.data]);
+
+  console.log("allChapters", allChapters);
   const totalChapterPages = Math.max(
     1,
     Math.ceil(allChapters.length / CHAPTERS_PAGE_SIZE),
