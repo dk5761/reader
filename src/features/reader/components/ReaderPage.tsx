@@ -1,11 +1,30 @@
 import type { ReaderPage as ReaderPageType } from "@/services/reader";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Dimensions, Image, StyleSheet, Text, View } from "react-native";
+import { Dimensions, Image as RNImage, StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
 interface ReaderPageProps {
   page: ReaderPageType;
+}
+
+function CircularLoader({ size = 24 }: { size?: number }) {
+  return (
+    <View style={styles.loaderContainer}>
+      <View
+        style={[
+          styles.loader,
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            borderWidth: 2,
+          },
+        ]}
+      />
+    </View>
+  );
 }
 
 export function ReaderPageComponent({ page }: ReaderPageProps) {
@@ -37,9 +56,9 @@ export function ReaderPageComponent({ page }: ReaderPageProps) {
   const fetchImageDimensions = useCallback(() => {
     if (preFetchedDimensions) return;
 
-    Image.getSize(
+    RNImage.getSize(
       page.imageUrl,
-      (width, height) => {
+      (width: number, height: number) => {
         setImageDimensions({ width, height });
       },
       () => {
@@ -81,11 +100,14 @@ export function ReaderPageComponent({ page }: ReaderPageProps) {
     <View style={styles.container}>
       {isLoading && (
         <View style={[styles.placeholder, { height: placeholderHeight }]}>
-          <Text className="text-xs text-[#9B9CA6]">Page {page.index + 1}</Text>
+          <CircularLoader size={28} />
+          <Text className="mt-2 text-xs text-[#9B9CA6]">
+            Page {page.index + 1}
+          </Text>
         </View>
       )}
       {hasError ? (
-        <View style={styles.errorContainer}>
+        <View style={[styles.errorContainer, { height: placeholderHeight }]}>
           <Text className="text-xs text-red-400">Failed to load image</Text>
         </View>
       ) : (
@@ -93,9 +115,10 @@ export function ReaderPageComponent({ page }: ReaderPageProps) {
           source={{ uri: page.imageUrl, headers: page.headers }}
           style={[
             styles.image,
-            expectedHeight ? { height: expectedHeight } : null,
+            expectedHeight ? { height: expectedHeight } : undefined,
           ]}
-          resizeMode="contain"
+          contentFit="contain"
+          transition={150}
           onLoad={handleLoad}
           onError={handleError}
         />
@@ -115,15 +138,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#16171A",
   },
+  loaderContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loader: {
+    borderColor: "#67A4FF",
+    borderTopColor: "transparent",
+  },
   errorContainer: {
     width: SCREEN_WIDTH,
-    height: 200,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#16171A",
   },
   image: {
     width: SCREEN_WIDTH,
-    // Height will be set based on aspect ratio after dimensions are fetched
   },
 });
