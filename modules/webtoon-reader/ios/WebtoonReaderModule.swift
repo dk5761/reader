@@ -1,6 +1,5 @@
 import ExpoModulesCore
 import UIKit
-import Kingfisher
 
 public class WebtoonReaderModule: Module {
   public func definition() -> ModuleDefinition {

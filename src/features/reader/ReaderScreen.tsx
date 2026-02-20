@@ -43,7 +43,15 @@ export default function ReaderScreen() {
   const [isOverlayVisible, setOverlayVisible] = useState(true);
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const [currentOverlayChapterId, setCurrentOverlayChapterId] = useState(initialChapterId);
-  const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(0);
+  const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(initialPage > 0 ? initialPage : 0);
+  const [pendingSeek, setPendingSeek] = useState<{
+    chapterId: string;
+    pageIndex: number;
+  } | null>(
+    initialPage > 0 && initialChapterId
+      ? { chapterId: initialChapterId, pageIndex: initialPage }
+      : null,
+  );
 
   // Background Cache State
   const [downloadedPages, setDownloadedPages] = useState<Record<string, DownloadedPage>>({});
@@ -66,12 +74,14 @@ export default function ReaderScreen() {
     })),
   });
 
+  const primaryQuery = chapterPagesQueries[0];
+  const primaryChapterPages = primaryQuery?.data;
+
   // Keep the store "chapter" updated for the primary initial chapter
   // (Progress tracking might need to be explicitly managed onChapterChanged later)
   useEffect(() => {
-    const primaryQuery = chapterPagesQueries[0];
-    if (primaryQuery?.data && initialChapterId) {
-      const pages: ReaderPage[] = primaryQuery.data.map((page, index) => ({
+    if (primaryChapterPages && initialChapterId) {
+      const pages: ReaderPage[] = primaryChapterPages.map((page, index) => ({
         index,
         pageId: `${initialChapterId}-${index}`,
         imageUrl: page.imageUrl,
@@ -81,7 +91,7 @@ export default function ReaderScreen() {
         state: { status: "ready", imageUrl: page.imageUrl },
       }));
 
-      const firstPage = primaryQuery.data[0];
+      const firstPage = primaryChapterPages[0];
       const readerChapter: ReaderChapter = {
         id: initialChapterId,
         sourceId,
@@ -99,7 +109,7 @@ export default function ReaderScreen() {
       }
     }
   }, [
-    chapterPagesQueries[0]?.data,
+    primaryChapterPages,
     initialChapterId,
     sourceId,
     mangaId,
@@ -131,7 +141,7 @@ export default function ReaderScreen() {
         });
       }
     });
-  }, [chapterPagesQueries, activeChapterIds]);
+  }, [chapterPagesQueries, activeChapterIds, downloadedPages]);
 
   // Combine all loaded pages seamlessly
   const combinedData = useMemo(() => {
@@ -152,7 +162,8 @@ export default function ReaderScreen() {
 
           merged.push({
             id: `transition-${cId}`,
-            url: "", // Transition cells don't need URLs
+            localPath: "",
+            pageIndex: -1,
             chapterId: cId,
             aspectRatio: 1, // Ignored by native transition cell
             isTransition: true,
@@ -167,7 +178,8 @@ export default function ReaderScreen() {
 
           return {
             id: pageId,
-            url: downloaded?.localUri || p.imageUrl,
+            localPath: downloaded?.localUri || "",
+            pageIndex: index,
             chapterId: cId,
             aspectRatio: downloaded ? (downloaded.width / downloaded.height) : ((p.width && p.height) ? p.width / p.height : 1),
             isTransition: false,
@@ -177,7 +189,23 @@ export default function ReaderScreen() {
       }
     }
     return merged;
-  }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data]);
+  }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data, downloadedPages]);
+
+  useEffect(() => {
+    if (!pendingSeek) return;
+
+    const targetExists = combinedData.some(
+      (item) =>
+        !item.isTransition &&
+        item.chapterId === pendingSeek.chapterId &&
+        item.pageIndex === pendingSeek.pageIndex,
+    );
+
+    if (!targetExists) return;
+
+    nativeReaderRef.current?.seekTo(pendingSeek.chapterId, pendingSeek.pageIndex);
+    setPendingSeek(null);
+  }, [combinedData, pendingSeek]);
 
   const handleEndReached = useCallback((reachedChapterId: string) => {
     console.log("[ReaderScreen] handleEndReached CALLED with chapterId:", reachedChapterId);
@@ -236,11 +264,13 @@ export default function ReaderScreen() {
     setCurrentOverlayPageIndex(pageIndex);
   }, []);
 
+  const handleChapterChanged = useCallback((chapterId: string) => {
+    setCurrentOverlayChapterId(chapterId);
+  }, []);
+
   const handleSeek = useCallback((pageIndex: number) => {
     nativeReaderRef.current?.seekTo(currentOverlayChapterId, Math.floor(pageIndex));
   }, [currentOverlayChapterId]);
-
-  const primaryQuery = chapterPagesQueries[0];
 
   if (primaryQuery?.isPending || !primaryQuery?.data) {
     return (
@@ -292,6 +322,7 @@ export default function ReaderScreen() {
         ref={nativeReaderRef}
         data={combinedData}
         onEndReached={handleEndReached}
+        onChapterChanged={handleChapterChanged}
         onSingleTap={toggleOverlay}
         onPageChanged={handlePageChanged}
       />
@@ -316,8 +347,7 @@ export default function ReaderScreen() {
               if (!activeChapterIds.includes(nextId)) {
                 setActiveChapterIds(prev => [...prev, nextId]);
               }
-              // Give JS time to fetch and render the payload, then seek to its index 0
-              setTimeout(() => nativeReaderRef.current?.seekTo(nextId, 0), 300);
+              setPendingSeek({ chapterId: nextId, pageIndex: 0 });
             }
           }}
           onPrevChapter={() => {
@@ -329,7 +359,7 @@ export default function ReaderScreen() {
               if (!activeChapterIds.includes(prevId)) {
                 setActiveChapterIds(prev => [prevId, ...prev]);
               }
-              setTimeout(() => nativeReaderRef.current?.seekTo(prevId, 0), 300);
+              setPendingSeek({ chapterId: prevId, pageIndex: 0 });
             }
           }}
         />

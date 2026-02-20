@@ -10,7 +10,8 @@ export type ChangeEventPayload = {
 
 export type WebtoonPage = {
   id: string;          // Unique identifier
-  url: string;         // Remote image URL. Can be empty if isTransition is true.
+  localPath: string;   // Local file path for native decode. Empty for placeholders/transitions.
+  pageIndex: number;   // Relative page index in chapter. Use -1 for transition cells.
   chapterId: string;   // ID/Title of the chapter this page belongs to
   aspectRatio: number; // width / height 
   isTransition?: boolean; // If true, instructs native view to render the interstitial transition cell

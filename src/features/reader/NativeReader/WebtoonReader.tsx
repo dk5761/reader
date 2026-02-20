@@ -21,7 +21,7 @@ type NativeWebtoonReaderProps = {
     onPageChanged?: (chapterId: string, pageIndex: number) => void;
 };
 
-export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
+export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({ 
     data,
     onEndReached,
     onChapterChanged,
@@ -72,6 +72,8 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
         </View>
     );
 });
+
+NativeWebtoonReader.displayName = 'NativeWebtoonReader';
 
 const styles = StyleSheet.create({
     container: {

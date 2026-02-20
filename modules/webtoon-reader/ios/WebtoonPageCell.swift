@@ -1,17 +1,28 @@
 import UIKit
-import Kingfisher
 
 class WebtoonPageCell: UICollectionViewCell {
   static let identifier = "WebtoonPageCell"
-  
+
   private var scrollView: UIScrollView!
   private var tiledImageView: TiledImageView!
-  
+  private var lastZoomInteractionAt: CFTimeInterval = 0
+
+  var shouldSuppressReaderTap: Bool {
+    if scrollView.isDragging || scrollView.isDecelerating || scrollView.isZooming {
+      return true
+    }
+
+    if scrollView.zoomScale > 1.01 {
+      return true
+    }
+
+    return CACurrentMediaTime() - lastZoomInteractionAt < 0.35
+  }
+
   override init(frame: CGRect) {
     super.init(frame: frame)
-    backgroundColor = .clear // Important to prevent white flashes
-    
-    // Setup ScrollView for Zoom (Phase 4)
+    backgroundColor = .clear
+
     scrollView = UIScrollView(frame: contentView.bounds)
     scrollView.delegate = self
     scrollView.minimumZoomScale = 1.0
@@ -19,101 +30,97 @@ class WebtoonPageCell: UICollectionViewCell {
     scrollView.showsVerticalScrollIndicator = false
     scrollView.showsHorizontalScrollIndicator = false
     scrollView.bouncesZoom = true
-    
-    // Disable native vertical scrolling for the cell itself so parent CollectionView works
-    // Allow zooming/panning only horizontally if zoomed.
     scrollView.isScrollEnabled = false
-    
-    // Setup Tiled View for Sub-sampling huge textures
+
     tiledImageView = TiledImageView(frame: .zero)
     scrollView.addSubview(tiledImageView)
     contentView.addSubview(scrollView)
-    
-    // Add double tap to zoom
+
     let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap))
     doubleTap.numberOfTapsRequired = 2
     scrollView.addGestureRecognizer(doubleTap)
   }
-  
+
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
   }
-  
+
   override func layoutSubviews() {
     super.layoutSubviews()
     scrollView.frame = contentView.bounds
   }
-  
+
   override func prepareForReuse() {
     super.prepareForReuse()
     scrollView.setZoomScale(1.0, animated: false)
     scrollView.isScrollEnabled = false
-    // Clear contents to free memory immediately
     tiledImageView.clear()
   }
-  
+
   @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
-      if scrollView.zoomScale > 1.0 {
-          scrollView.setZoomScale(1.0, animated: true)
-          scrollView.isScrollEnabled = false
-      } else {
-          let location = gesture.location(in: tiledImageView)
-          let zoomRect = self.zoomRectForScale(scale: 2.5, center: location)
-          scrollView.isScrollEnabled = true
-          scrollView.zoom(to: zoomRect, animated: true)
-      }
-  }
-  
-  private func zoomRectForScale(scale: CGFloat, center: CGPoint) -> CGRect {
-      var zoomRect = CGRect.zero
-      zoomRect.size.height = scrollView.frame.size.height / scale
-      zoomRect.size.width  = scrollView.frame.size.width  / scale
-      let newCenter = scrollView.convert(center, from: tiledImageView)
-      zoomRect.origin.x = newCenter.x - (zoomRect.size.width / 2.0)
-      zoomRect.origin.y = newCenter.y - (zoomRect.size.height / 2.0)
-      return zoomRect
-  }
-  
-  func configure(with page: WebtoonPage) {
-    // Determine screen width and intended image height based on the exact aspectRatio React Native calculated from disk
-    let screenWidth = UIScreen.main.bounds.width
-    let targetHeight = screenWidth / page.aspectRatio
-    let targetSize = CGSize(width: screenWidth, height: targetHeight)
-    
-    // Adjust ScrollView content wrapper
-    scrollView.contentSize = targetSize
-    
-    guard let url = URL(string: page.url) else { return }
-    
-    if url.isFileURL || page.url.starts(with: "/") {
-        let rawPath = page.url.starts(with: "/") ? page.url : url.path
-        tiledImageView.configure(withLocalPath: rawPath, exactSize: targetSize)
+    lastZoomInteractionAt = CACurrentMediaTime()
+
+    if scrollView.zoomScale > 1.0 {
+      scrollView.setZoomScale(1.0, animated: true)
+      scrollView.isScrollEnabled = false
     } else {
-        // Fallback for remote URLs: Use Kingfisher to cache to disk first
-        KingfisherManager.shared.retrieveImage(with: url, options: [.targetCache(ImageCache.default)]) { [weak self] result in
-            guard let self = self else { return }
-            switch result {
-            case .success(_):
-                let cachePath = ImageCache.default.cachePath(forKey: url.absoluteString)
-                DispatchQueue.main.async {
-                    self.tiledImageView.configure(withLocalPath: cachePath, exactSize: targetSize)
-                }
-            case .failure(let error):
-                print("[WebtoonPageCell] Failed to download remote image: \(error.localizedDescription)")
-            }
-        }
+      let location = gesture.location(in: tiledImageView)
+      let zoomRect = self.zoomRectForScale(scale: 2.5, center: location)
+      scrollView.isScrollEnabled = true
+      scrollView.zoom(to: zoomRect, animated: true)
     }
+  }
+
+  private func zoomRectForScale(scale: CGFloat, center: CGPoint) -> CGRect {
+    var zoomRect = CGRect.zero
+    zoomRect.size.height = scrollView.frame.size.height / scale
+    zoomRect.size.width = scrollView.frame.size.width / scale
+    let newCenter = scrollView.convert(center, from: tiledImageView)
+    zoomRect.origin.x = newCenter.x - (zoomRect.size.width / 2.0)
+    zoomRect.origin.y = newCenter.y - (zoomRect.size.height / 2.0)
+    return zoomRect
+  }
+
+  func configure(with page: WebtoonPage) {
+    let safeAspectRatio = page.aspectRatio > 0 ? page.aspectRatio : 1.0
+    let screenWidth = UIScreen.main.bounds.width
+    let targetHeight = screenWidth / safeAspectRatio
+    let targetSize = CGSize(width: screenWidth, height: targetHeight)
+
+    scrollView.contentSize = targetSize
+
+    let rawPath = page.localPath
+    guard !rawPath.isEmpty else {
+      tiledImageView.clear()
+      return
+    }
+
+    let resolvedPath: String
+    if rawPath.hasPrefix("file://"), let url = URL(string: rawPath) {
+      resolvedPath = url.path
+    } else {
+      resolvedPath = rawPath
+    }
+
+    guard resolvedPath.hasPrefix("/") else {
+      tiledImageView.clear()
+      return
+    }
+
+    tiledImageView.configure(withLocalPath: resolvedPath, exactSize: targetSize)
   }
 }
 
-// MARK: - UIScrollViewDelegate (Phase 4: Zoom/Pan handling natively)
 extension WebtoonPageCell: UIScrollViewDelegate {
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? {
-        return tiledImageView
-    }
-    
-    func scrollViewDidZoom(_ scrollView: UIScrollView) {
-        // Only allow scrolling / panning when actually zoomed in
-        scrollView.isScrollEnabled = scrollView.zoomScale > 1.0
-    }
+  func viewForZooming(in scrollView: UIScrollView) -> UIView? {
+    return tiledImageView
+  }
+
+  func scrollViewWillBeginZooming(_ scrollView: UIScrollView, with view: UIView?) {
+    lastZoomInteractionAt = CACurrentMediaTime()
+  }
+
+  func scrollViewDidZoom(_ scrollView: UIScrollView) {
+    scrollView.isScrollEnabled = scrollView.zoomScale > 1.0
+  }
 }
