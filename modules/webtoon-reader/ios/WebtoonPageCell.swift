@@ -42,17 +42,30 @@ class WebtoonPageCell: UICollectionViewCell {
     let targetSize = CGSize(width: screenWidth, height: maxTextureSize)
     let processor = DownsamplingImageProcessor(size: targetSize)
     
+    var options: KingfisherOptionsInfo = [
+      .processor(processor),
+      .scaleFactor(UIScreen.main.scale),
+      .cacheOriginalImage,
+      .backgroundDecode, // Move image decoding sequence to background thread
+      .transition(.fade(0.1)) // Tiny fade prevents sudden pop-in
+    ]
+    
+    if let headers = page.headers, !headers.isEmpty {
+      let modifier = AnyModifier { request in
+        var r = request
+        for (key, value) in headers {
+          r.setValue(value, forHTTPHeaderField: key)
+        }
+        return r
+      }
+      options.append(.requestModifier(modifier))
+    }
+    
     imageView.kf.indicatorType = .activity
     imageView.kf.setImage(
       with: url,
       placeholder: nil,
-      options: [
-        .processor(processor),
-        .scaleFactor(UIScreen.main.scale),
-        .cacheOriginalImage,
-        .backgroundDecode, // Move image decoding sequence to background thread
-        .transition(.fade(0.1)) // Tiny fade prevents sudden pop-in
-      ],
+      options: options,
       completionHandler: { result in
         switch result {
         case .success(let value):

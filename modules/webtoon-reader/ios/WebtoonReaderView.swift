@@ -11,6 +11,7 @@ struct WebtoonPage: Hashable {
   let isTransition: Bool
   let previousChapterTitle: String?
   let nextChapterTitle: String?
+  let headers: [String: String]?
 }
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
@@ -133,8 +134,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       let isTransition = dict["isTransition"] as? Bool ?? false
       let prevTitle = dict["previousChapterTitle"] as? String
       let nextTitle = dict["nextChapterTitle"] as? String
+      let headers = dict["headers"] as? [String: String]
             
-      return WebtoonPage(id: id, url: url, chapterId: chapterId, aspectRatio: aspectRatio, isTransition: isTransition, previousChapterTitle: prevTitle, nextChapterTitle: nextTitle)
+      return WebtoonPage(id: id, url: url, chapterId: chapterId, aspectRatio: aspectRatio, isTransition: isTransition, previousChapterTitle: prevTitle, nextChapterTitle: nextTitle, headers: headers)
     }
     
     // Map the highest index for each chapter to know where its "end" is.

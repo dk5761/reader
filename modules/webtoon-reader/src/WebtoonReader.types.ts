@@ -16,6 +16,7 @@ export type WebtoonPage = {
   isTransition?: boolean; // If true, instructs native view to render the interstitial transition cell
   previousChapterTitle?: string; // Top row displayed in Transition cell
   nextChapterTitle?: string; // Bottom row displayed in Transition cell
+  headers?: Record<string, string>; // Optional HTTP headers
 };
 
 export type OnChapterChangedEventPayload = {

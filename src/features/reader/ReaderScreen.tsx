@@ -138,6 +138,7 @@ export default function ReaderScreen() {
           chapterId: cId,
           aspectRatio: (p.width && p.height) ? p.width / p.height : 1,
           isTransition: false,
+          headers: p.headers,
         })));
       }
     }
