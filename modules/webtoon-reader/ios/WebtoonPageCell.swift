@@ -35,13 +35,19 @@ class WebtoonPageCell: UICollectionViewCell {
   func configure(with page: WebtoonPage, completion: @escaping (CGFloat) -> Void) {
     guard let url = URL(string: page.url) else { return }
     
-    // We remove DownsamplingImageProcessor because we don't know the true size layout yet.
-    // Webtoon images must load at their original aspect ratio. 
+    // Calculate a safe bounding box for downsampling based on screen width
+    // We use a very large height to allow tall webtoons, but bound it to safe texture limits
+    let screenWidth = UIScreen.main.bounds.width
+    let maxTextureSize: CGFloat = 8192
+    let targetSize = CGSize(width: screenWidth, height: maxTextureSize)
+    let processor = DownsamplingImageProcessor(size: targetSize)
+    
     imageView.kf.indicatorType = .activity
     imageView.kf.setImage(
       with: url,
       placeholder: nil,
       options: [
+        .processor(processor),
         .scaleFactor(UIScreen.main.scale),
         .cacheOriginalImage,
         .backgroundDecode, // Move image decoding sequence to background thread
