@@ -48,7 +48,8 @@ class WebtoonPageCell: UICollectionViewCell {
     super.prepareForReuse()
     scrollView.setZoomScale(1.0, animated: false)
     scrollView.isScrollEnabled = false
-    tiledImageView.layer.contents = nil
+    // Clear contents to free memory immediately
+    tiledImageView.clear()
   }
   
   @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
