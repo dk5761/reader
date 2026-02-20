@@ -25,7 +25,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   private var lastEmittedChapterId: String? = nil
   private var lastEmittedPageId: String? = nil
 
-  private var chapterEndIndices: [String: Int] = [:]
+  private var chapterMaxPageIndices: [String: Int] = [:]
   private var preloadedChapters: Set<String> = []
 
   required init(appContext: AppContext? = nil) {
@@ -149,17 +149,18 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       )
     }
 
-    var currentChapterEndIndices: [String: Int] = [:]
-    for (index, page) in pages.enumerated() {
-      currentChapterEndIndices[page.chapterId] = index
+    var currentChapterMaxPageIndices: [String: Int] = [:]
+    for page in pages where !page.isTransition && page.pageIndex >= 0 {
+      let existingMax = currentChapterMaxPageIndices[page.chapterId] ?? -1
+      currentChapterMaxPageIndices[page.chapterId] = max(existingMax, page.pageIndex)
     }
 
-    let previousChapterSet = Set(chapterEndIndices.keys)
-    let currentChapterSet = Set(currentChapterEndIndices.keys)
+    let previousChapterSet = Set(chapterMaxPageIndices.keys)
+    let currentChapterSet = Set(currentChapterMaxPageIndices.keys)
     if previousChapterSet != currentChapterSet {
       preloadedChapters = preloadedChapters.intersection(currentChapterSet)
     }
-    chapterEndIndices = currentChapterEndIndices
+    chapterMaxPageIndices = currentChapterMaxPageIndices
 
     let currentPageIds = Set(pages.map(\.id))
     if let lastPage = lastEmittedPageId, !currentPageIds.contains(lastPage) {
@@ -279,6 +280,28 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     return dataSource.itemIdentifier(for: fallbackIndexPath)
   }
 
+  private func shouldPreload(chapterId: String, pageIndex: Int) -> Bool {
+    guard pageIndex >= 0,
+          let maxPageIndex = chapterMaxPageIndices[chapterId] else {
+      return false
+    }
+
+    // Trigger preload only when the user is actually near chapter end.
+    let triggerPageIndex = max(0, maxPageIndex - 1)
+    return pageIndex >= triggerPageIndex
+  }
+
+  private func emitEndReachedIfNeeded(chapterId: String, pageIndex: Int) {
+    guard shouldPreload(chapterId: chapterId, pageIndex: pageIndex) else {
+      return
+    }
+
+    if !preloadedChapters.contains(chapterId) {
+      preloadedChapters.insert(chapterId)
+      onEndReached(["chapterId": chapterId])
+    }
+  }
+
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
     let indexPaths = collectionView.indexPathsForVisibleItems
 
@@ -287,33 +310,16 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
 
     emitPageVisible(page: page)
-
-    if let lastIndexPath = indexPaths.max(),
-       let lastPage = dataSource.itemIdentifier(for: lastIndexPath),
-       let endIndex = chapterEndIndices[lastPage.chapterId] {
-
-      if lastIndexPath.item >= endIndex - 5 {
-        if !preloadedChapters.contains(lastPage.chapterId) {
-          preloadedChapters.insert(lastPage.chapterId)
-          onEndReached(["chapterId": lastPage.chapterId])
-        }
-      }
-    }
+    emitEndReachedIfNeeded(chapterId: page.chapterId, pageIndex: page.pageIndex)
   }
 
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
     for indexPath in indexPaths {
-      guard let page = dataSource.itemIdentifier(for: indexPath),
-            let endIndex = chapterEndIndices[page.chapterId] else {
+      guard let page = dataSource.itemIdentifier(for: indexPath) else {
         continue
       }
 
-      if indexPath.item >= endIndex - 5 {
-        if !preloadedChapters.contains(page.chapterId) {
-          preloadedChapters.insert(page.chapterId)
-          onEndReached(["chapterId": page.chapterId])
-        }
-      }
+      emitEndReachedIfNeeded(chapterId: page.chapterId, pageIndex: page.pageIndex)
     }
   }
 }
