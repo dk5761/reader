@@ -23,9 +23,6 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
   
-  // Track dynamically loaded aspect ratios for images where RN didn't explicitly know it
-  private var dynamicAspectRatios: [String: CGFloat] = [:]
-  
   // Track the previously emitted chapter to avoid duplicate events
   private var lastEmittedChapterId: String? = nil
   private var lastEmittedPageId: String? = nil
@@ -88,23 +85,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
         fatalError("Could not create image cell")
       }
       
-      cell.configure(with: page) { [weak self] actualRatio in
-        guard let self = self else { return }
-        // ... (keep rest of image configure block)
-        let currentRatio = self.dynamicAspectRatios[page.id] ?? page.aspectRatio
-        
-        if abs(currentRatio - actualRatio) > 0.01 {
-          self.dynamicAspectRatios[page.id] = actualRatio
-          
-          DispatchQueue.main.async {
-            if let currentIndexPath = self.dataSource.indexPath(for: page) {
-              let context = UICollectionViewFlowLayoutInvalidationContext()
-              context.invalidateItems(at: [currentIndexPath])
-              self.collectionView.collectionViewLayout.invalidateLayout(with: context)
-            }
-          }
-        }
-      }
+      cell.configure(with: page)
       return cell
     }
   }
@@ -193,17 +174,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
        return CGSize(width: width, height: 200) // Fixed height for Transition cell
     }
     
-    // 1. If we have dynamically downloaded the image and tracked its true ratio, use it (highest priority)
-    if let dynamicRatio = dynamicAspectRatios[page.id], dynamicRatio > 0 {
-      return CGSize(width: width, height: width / dynamicRatio)
-    }
-    
-    // 2. If React Native explicitly provided a non-default ratio (> 0 and != 1.0), use it
-    if page.aspectRatio > 0 && page.aspectRatio != 1.0 {
+    // 2. Use the React Native provided ratio
+    if page.aspectRatio > 0 {
       return CGSize(width: width, height: width / page.aspectRatio)
     }
     
-    // 3. FALLBACK: The image is unloaded or has a default (1.0) ratio.
+    // 3. FALLBACK: The image is unloaded or has a default ratio.
     // Like Mihon, we allocate exactly one viewport height for the placeholder.
     // This allows the layout to estimate the total scroll height without jumping 
     // when skipping over 10 unloaded gaps to reach page 15.

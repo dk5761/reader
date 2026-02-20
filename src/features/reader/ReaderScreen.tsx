@@ -11,6 +11,7 @@ import { ReaderBottomOverlay } from "./components/ReaderBottomOverlay";
 import { ReaderLoadingScreen } from "./components/ReaderLoadingScreen";
 import { ReaderTopOverlay } from "./components/ReaderTopOverlay";
 import { NativeWebtoonReader, type NativeWebtoonReaderRef } from "./NativeReader/WebtoonReader";
+import { DownloadedPage, imageDownloadManager } from "./utils/ImageDownloadManager";
 
 export default function ReaderScreen() {
   const params = useLocalSearchParams<{
@@ -43,6 +44,9 @@ export default function ReaderScreen() {
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const [currentOverlayChapterId, setCurrentOverlayChapterId] = useState(initialChapterId);
   const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(0);
+
+  // Background Cache State
+  const [downloadedPages, setDownloadedPages] = useState<Record<string, DownloadedPage>>({});
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -104,6 +108,31 @@ export default function ReaderScreen() {
     setCurrentPage,
   ]);
 
+  // Background Downloader Hook
+  // Watches all active chapter pages data, and eagerly downloads them to disk.
+  useEffect(() => {
+    chapterPagesQueries.forEach((query, i) => {
+      const cId = activeChapterIds[i];
+      if (query.data) {
+        // Preload next 10 items or entire chapter
+        query.data.forEach(async (p, index) => {
+          const cacheKey = `${cId}-${index}`;
+          if (!downloadedPages[cacheKey]) {
+            try {
+              const result = await imageDownloadManager.downloadPage(cId, p.imageUrl, p.headers);
+              setDownloadedPages(prev => ({
+                ...prev,
+                [cacheKey]: result
+              }));
+            } catch (e) {
+              console.error(`Failed to download page ${cacheKey}`, e);
+            }
+          }
+        });
+      }
+    });
+  }, [chapterPagesQueries, activeChapterIds]);
+
   // Combine all loaded pages seamlessly
   const combinedData = useMemo(() => {
     let merged: any[] = [];
@@ -132,14 +161,19 @@ export default function ReaderScreen() {
           });
         }
 
-        merged = merged.concat(query.data.map((p, index) => ({
-          id: `${cId}-${index}`,
-          url: p.imageUrl,
-          chapterId: cId,
-          aspectRatio: (p.width && p.height) ? p.width / p.height : 1,
-          isTransition: false,
-          headers: p.headers,
-        })));
+        merged = merged.concat(query.data.map((p, index) => {
+          const pageId = `${cId}-${index}`;
+          const downloaded = downloadedPages[pageId];
+
+          return {
+            id: pageId,
+            url: downloaded?.localUri || p.imageUrl,
+            chapterId: cId,
+            aspectRatio: downloaded ? (downloaded.width / downloaded.height) : ((p.width && p.height) ? p.width / p.height : 1),
+            isTransition: false,
+            headers: p.headers,
+          };
+        }));
       }
     }
     return merged;
@@ -168,7 +202,19 @@ export default function ReaderScreen() {
       const nextChapterId = chaptersQuery.data[nextIndex].id;
       console.log("[ReaderScreen] PRELOADING NEXT CHAPTER:", nextChapterId);
       if (!activeChapterIds.includes(nextChapterId)) {
-        setActiveChapterIds(prev => [...prev, nextChapterId]);
+        setActiveChapterIds(prev => {
+          let updated = [...prev, nextChapterId];
+          // Phase 5: Aggressive Memory Eviction. Keeps only the immediate previous, current, and next chapters in the DOM.
+          // This allows native UICollectionView to eagerly destroy old `TiledImageView` cells.
+          if (updated.length > 3) {
+            const evictedId = updated.shift(); // Drop the oldest loaded chapter from React State
+            if (evictedId) {
+              // Also purge from disk cache asynchronously
+              imageDownloadManager.evictChapter(evictedId).catch(console.error);
+            }
+          }
+          return updated;
+        });
       }
     } else {
       console.log("[ReaderScreen] No next chapter found (hit the end of the manga).");
