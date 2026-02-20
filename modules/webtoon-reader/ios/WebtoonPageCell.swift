@@ -84,10 +84,25 @@ class WebtoonPageCell: UICollectionViewCell {
     scrollView.contentSize = targetSize
     
     guard let url = URL(string: page.url) else { return }
-    let rawPath = url.path // Strip file:// scheme for UIImage(contentsOfFile:)
     
-    // Feed local disk image to CATiledLayer immediately
-    tiledImageView.configure(withLocalPath: rawPath, exactSize: targetSize)
+    if url.isFileURL || page.url.starts(with: "/") {
+        let rawPath = page.url.starts(with: "/") ? page.url : url.path
+        tiledImageView.configure(withLocalPath: rawPath, exactSize: targetSize)
+    } else {
+        // Fallback for remote URLs: Use Kingfisher to cache to disk first
+        KingfisherManager.shared.retrieveImage(with: url, options: [.targetCache(ImageCache.default)]) { [weak self] result in
+            guard let self = self else { return }
+            switch result {
+            case .success(_):
+                let cachePath = ImageCache.default.cachePath(forKey: url.absoluteString)
+                DispatchQueue.main.async {
+                    self.tiledImageView.configure(withLocalPath: cachePath, exactSize: targetSize)
+                }
+            case .failure(let error):
+                print("[WebtoonPageCell] Failed to download remote image: \(error.localizedDescription)")
+            }
+        }
+    }
   }
 }
 
