@@ -10,7 +10,7 @@ import {
 } from '../../../../modules/webtoon-reader';
 
 export type NativeWebtoonReaderRef = {
-    seekTo: (chapterId: string, index: number) => void;
+    seekTo: (chapterId: string, index: number) => Promise<boolean>;
 };
 
 type NativeWebtoonReaderProps = {
@@ -31,10 +31,21 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
     const nativeViewRef = React.useRef<any>(null);
 
     useImperativeHandle(ref, () => ({
-        seekTo: (chapterId: string, index: number) => {
+        seekTo: async (chapterId: string, index: number) => {
             // Expo Modules automatically attach AsyncFunctions defined in the ViewBuilder
             // precisely to the native view component instance.
-            nativeViewRef.current?.scrollToIndex(chapterId, index);
+            const nativeView = nativeViewRef.current;
+            if (!nativeView?.scrollToIndex) {
+                return false;
+            }
+
+            try {
+                await nativeView.scrollToIndex(chapterId, index);
+                return true;
+            } catch (error) {
+                console.warn("[NativeWebtoonReader] seekTo failed", { chapterId, index, error });
+                return false;
+            }
         }
     }), []);
     const handleChapterChanged = React.useCallback(

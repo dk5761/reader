@@ -7,6 +7,7 @@ interface ReaderBottomOverlayProps {
     currentChapterId: string;
     currentPageIndex: number;
     totalVisiblePages: number;
+    disabled?: boolean;
     onSeek: (pageIndex: number) => void;
     onNextChapter: () => void;
     onPrevChapter: () => void;
@@ -16,6 +17,7 @@ export function ReaderBottomOverlay({
     currentChapterId,
     currentPageIndex,
     totalVisiblePages,
+    disabled = false,
     onSeek,
     onNextChapter,
     onPrevChapter,
@@ -31,7 +33,11 @@ export function ReaderBottomOverlay({
 
             {/* Main Control Row */}
             <View style={styles.controlRow}>
-                <TouchableOpacity onPress={onPrevChapter} style={styles.iconButton}>
+                <TouchableOpacity
+                    onPress={onPrevChapter}
+                    style={[styles.iconButton, disabled && styles.disabledControl]}
+                    disabled={disabled}
+                >
                     <MaterialCommunityIcons name="skip-previous" size={32} color="white" />
                 </TouchableOpacity>
 
@@ -42,6 +48,7 @@ export function ReaderBottomOverlay({
                         maximumValue={Math.max(0, totalVisiblePages - 1)}
                         value={currentPageIndex}
                         step={1}
+                        disabled={disabled}
                         onSlidingComplete={onSeek}
                         minimumTrackTintColor="#FFFFFF"
                         maximumTrackTintColor="#555555"
@@ -49,7 +56,11 @@ export function ReaderBottomOverlay({
                     />
                 </View>
 
-                <TouchableOpacity onPress={onNextChapter} style={styles.iconButton}>
+                <TouchableOpacity
+                    onPress={onNextChapter}
+                    style={[styles.iconButton, disabled && styles.disabledControl]}
+                    disabled={disabled}
+                >
                     <MaterialCommunityIcons name="skip-next" size={32} color="white" />
                 </TouchableOpacity>
             </View>
@@ -88,5 +99,8 @@ const styles = StyleSheet.create({
     },
     iconButton: {
         padding: 8,
+    },
+    disabledControl: {
+        opacity: 0.45,
     },
 });

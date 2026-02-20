@@ -234,17 +234,61 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
   }
 
-  func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    let indexPaths = collectionView.indexPathsForVisibleItems.sorted()
+  private func primaryVisiblePage(from visibleIndexPaths: [IndexPath]) -> WebtoonPage? {
+    guard !visibleIndexPaths.isEmpty else { return nil }
 
-    guard let firstIndexPath = indexPaths.first,
-          let page = dataSource.itemIdentifier(for: firstIndexPath) else {
+    // Prefer the item around upper-middle viewport so page/chapter overlays update
+    // when the user has meaningfully progressed, instead of waiting for top cell exit.
+    let probePoint = CGPoint(
+      x: collectionView.bounds.midX,
+      y: collectionView.contentOffset.y + (collectionView.bounds.height * 0.35)
+    )
+
+    if let probeIndexPath = collectionView.indexPathForItem(at: probePoint),
+       let probePage = dataSource.itemIdentifier(for: probeIndexPath) {
+      return probePage
+    }
+
+    let visibleRect = CGRect(origin: collectionView.contentOffset, size: collectionView.bounds.size)
+    var bestPage: WebtoonPage?
+    var bestIntersectionArea: CGFloat = 0
+
+    for indexPath in visibleIndexPaths {
+      guard let attributes = collectionView.layoutAttributesForItem(at: indexPath),
+            let page = dataSource.itemIdentifier(for: indexPath) else {
+        continue
+      }
+
+      let intersection = visibleRect.intersection(attributes.frame)
+      if intersection.isNull || intersection.isEmpty {
+        continue
+      }
+
+      let area = intersection.width * intersection.height
+      if area > bestIntersectionArea {
+        bestIntersectionArea = area
+        bestPage = page
+      }
+    }
+
+    if let bestPage = bestPage {
+      return bestPage
+    }
+
+    guard let fallbackIndexPath = visibleIndexPaths.min() else { return nil }
+    return dataSource.itemIdentifier(for: fallbackIndexPath)
+  }
+
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    let indexPaths = collectionView.indexPathsForVisibleItems
+
+    guard let page = primaryVisiblePage(from: indexPaths) else {
       return
     }
 
     emitPageVisible(page: page)
 
-    if let lastIndexPath = indexPaths.last,
+    if let lastIndexPath = indexPaths.max(),
        let lastPage = dataSource.itemIdentifier(for: lastIndexPath),
        let endIndex = chapterEndIndices[lastPage.chapterId] {
 

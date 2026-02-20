@@ -40,10 +40,12 @@ export default function ReaderScreen() {
 
   // Overlay State Tracking driven by Native Swift scroll events
   const nativeReaderRef = useRef<NativeWebtoonReaderRef>(null);
+  const chapterSwitchTargetRef = useRef<string | null>(null);
   const [isOverlayVisible, setOverlayVisible] = useState(true);
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const [currentOverlayChapterId, setCurrentOverlayChapterId] = useState(initialChapterId);
   const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(initialPage > 0 ? initialPage : 0);
+  const [chapterSwitchTargetId, setChapterSwitchTargetId] = useState<string | null>(null);
   const [pendingSeek, setPendingSeek] = useState<{
     chapterId: string;
     pageIndex: number;
@@ -74,8 +76,23 @@ export default function ReaderScreen() {
     })),
   });
 
-  const primaryQuery = chapterPagesQueries[0];
+  const initialChapterQueryIndex = activeChapterIds.indexOf(initialChapterId);
+  const primaryQuery =
+    initialChapterQueryIndex >= 0
+      ? chapterPagesQueries[initialChapterQueryIndex]
+      : undefined;
   const primaryChapterPages = primaryQuery?.data;
+
+  const activeOverlayChapterQueryIndex = activeChapterIds.indexOf(currentOverlayChapterId);
+  const activeOverlayChapterQuery =
+    activeOverlayChapterQueryIndex >= 0
+      ? chapterPagesQueries[activeOverlayChapterQueryIndex]
+      : undefined;
+
+  const isChapterSwitching = Boolean(chapterSwitchTargetId);
+  const chapterSwitchMeta = chaptersQuery.data?.find((c) => c.id === chapterSwitchTargetId);
+  const chapterSwitchTitle = chapterSwitchMeta?.title ||
+    (chapterSwitchMeta?.number ? `Chapter ${chapterSwitchMeta.number}` : undefined);
 
   // Keep the store "chapter" updated for the primary initial chapter
   // (Progress tracking might need to be explicitly managed onChapterChanged later)
@@ -203,11 +220,47 @@ export default function ReaderScreen() {
 
     if (!targetExists) return;
 
-    nativeReaderRef.current?.seekTo(pendingSeek.chapterId, pendingSeek.pageIndex);
-    setPendingSeek(null);
-  }, [combinedData, pendingSeek]);
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    (async () => {
+      const didSeek = await nativeReaderRef.current?.seekTo(
+        pendingSeek.chapterId,
+        pendingSeek.pageIndex,
+      );
+
+      if (!cancelled && didSeek) {
+        setPendingSeek(null);
+        if (chapterSwitchTargetId === pendingSeek.chapterId) {
+          chapterSwitchTargetRef.current = null;
+          setChapterSwitchTargetId(null);
+        }
+      } else if (!cancelled) {
+        retryTimer = setTimeout(() => {
+          setPendingSeek((current) => {
+            if (!current) return current;
+            if (current.chapterId !== pendingSeek.chapterId || current.pageIndex !== pendingSeek.pageIndex) {
+              return current;
+            }
+            return { ...current };
+          });
+        }, 80);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
+    };
+  }, [combinedData, pendingSeek, chapterSwitchTargetId]);
 
   const handleEndReached = useCallback((reachedChapterId: string) => {
+    if (chapterSwitchTargetRef.current) {
+      return;
+    }
+
     console.log("[ReaderScreen] handleEndReached CALLED with chapterId:", reachedChapterId);
     console.log("[ReaderScreen] activeChapterIds Currently:", activeChapterIds);
     console.log("[ReaderScreen] is chaptersQuery loaded?", !!chaptersQuery.data);
@@ -260,19 +313,45 @@ export default function ReaderScreen() {
   }, [isOverlayVisible, overlayOpacity]);
 
   const handlePageChanged = useCallback((chapterId: string, pageIndex: number) => {
+    const switchingTo = chapterSwitchTargetRef.current;
+    if (switchingTo && chapterId !== switchingTo) {
+      return;
+    }
     setCurrentOverlayChapterId(chapterId);
     setCurrentOverlayPageIndex(pageIndex);
   }, []);
 
   const handleChapterChanged = useCallback((chapterId: string) => {
+    const switchingTo = chapterSwitchTargetRef.current;
+    if (switchingTo && chapterId !== switchingTo) {
+      return;
+    }
     setCurrentOverlayChapterId(chapterId);
   }, []);
 
   const handleSeek = useCallback((pageIndex: number) => {
-    nativeReaderRef.current?.seekTo(currentOverlayChapterId, Math.floor(pageIndex));
+    if (chapterSwitchTargetRef.current) {
+      return;
+    }
+    const targetPage = Math.floor(pageIndex);
+    setCurrentOverlayPageIndex(targetPage);
+    void nativeReaderRef.current?.seekTo(currentOverlayChapterId, targetPage);
   }, [currentOverlayChapterId]);
 
-  if (primaryQuery?.isPending || !primaryQuery?.data) {
+  const switchToChapter = useCallback((targetChapterId: string) => {
+    if (!targetChapterId || chapterSwitchTargetRef.current) {
+      return;
+    }
+
+    chapterSwitchTargetRef.current = targetChapterId;
+    setChapterSwitchTargetId(targetChapterId);
+    setCurrentOverlayChapterId(targetChapterId);
+    setCurrentOverlayPageIndex(0);
+    setActiveChapterIds([targetChapterId]);
+    setPendingSeek({ chapterId: targetChapterId, pageIndex: 0 });
+  }, []);
+
+  if (!chapter && (primaryQuery?.isPending || !primaryQuery?.data)) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -281,7 +360,7 @@ export default function ReaderScreen() {
     );
   }
 
-  if (primaryQuery?.isError) {
+  if (!chapter && primaryQuery?.isError) {
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -311,9 +390,7 @@ export default function ReaderScreen() {
     (activeChapterMeta?.number ? `Chapter ${activeChapterMeta.number}` : "Chapter");
 
   // Find total pages for the currently focused chapter by checking its data array
-  const activeChapterQuery = chapterPagesQueries.find(q =>
-    activeChapterIds.indexOf(currentOverlayChapterId) === chapterPagesQueries.indexOf(q));
-  const activeChapterTotalPages = activeChapterQuery?.data?.length || 0;
+  const activeChapterTotalPages = activeOverlayChapterQuery?.data?.length || 0;
 
   return (
     <View style={styles.container}>
@@ -337,33 +414,40 @@ export default function ReaderScreen() {
           currentChapterId={currentOverlayChapterId}
           currentPageIndex={currentOverlayPageIndex}
           totalVisiblePages={activeChapterTotalPages}
+          disabled={isChapterSwitching}
           onSeek={handleSeek}
           onNextChapter={() => {
+            if (chapterSwitchTargetId) {
+              return;
+            }
             // Determine next chapter logically
             const currentIndex = chaptersQuery.data?.findIndex(c => c.id === currentOverlayChapterId) ?? -1;
             const nextIndex = currentIndex - 1; // Reverse sort
             if (nextIndex >= 0 && chaptersQuery.data) {
               const nextId = chaptersQuery.data[nextIndex].id;
-              if (!activeChapterIds.includes(nextId)) {
-                setActiveChapterIds(prev => [...prev, nextId]);
-              }
-              setPendingSeek({ chapterId: nextId, pageIndex: 0 });
+              switchToChapter(nextId);
             }
           }}
           onPrevChapter={() => {
+            if (chapterSwitchTargetId) {
+              return;
+            }
             // Determine previous chapter logically
             const currentIndex = chaptersQuery.data?.findIndex(c => c.id === currentOverlayChapterId) ?? -1;
             const prevIndex = currentIndex + 1; // Reverse sort
             if (prevIndex < (chaptersQuery.data?.length ?? 0) && chaptersQuery.data) {
               const prevId = chaptersQuery.data[prevIndex].id;
-              if (!activeChapterIds.includes(prevId)) {
-                setActiveChapterIds(prev => [prevId, ...prev]);
-              }
-              setPendingSeek({ chapterId: prevId, pageIndex: 0 });
+              switchToChapter(prevId);
             }
           }}
         />
       </Animated.View>
+
+      {isChapterSwitching && (
+        <View style={styles.chapterSwitchLoadingOverlay} pointerEvents="auto">
+          <ReaderLoadingScreen chapterTitle={chapterSwitchTitle} />
+        </View>
+      )}
     </View>
   );
 }
@@ -386,5 +470,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 10,
-  }
+  },
+  chapterSwitchLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
+  },
 });
