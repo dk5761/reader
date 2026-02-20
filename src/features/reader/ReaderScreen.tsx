@@ -1,12 +1,14 @@
 import type { ReaderChapter, ReaderPage } from "@/services/reader";
 import { useReaderStore } from "@/services/reader";
-import { getSourceChapters } from "@/services/source";
+import { chapterProgressQueryOptions } from "@/services/progress";
+import { getSourceChapters, getSourceMangaDetails } from "@/services/source";
 import { sourceQueryFactory } from "@/services/source/core/queryFactory";
 import { getSourceChapterPages } from "@/services/source/core/runtime";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
+import { useReaderProgressSync } from "./hooks/useReaderProgressSync";
 import { ReaderBottomOverlay } from "./components/ReaderBottomOverlay";
 import { ReaderLoadingScreen } from "./components/ReaderLoadingScreen";
 import { ReaderTopOverlay } from "./components/ReaderTopOverlay";
@@ -30,9 +32,16 @@ export default function ReaderScreen() {
   const initialChapterId = Array.isArray(params.chapterId)
     ? params.chapterId[0]
     : params.chapterId || "";
-  const initialPage = Array.isArray(params.initialPage)
-    ? parseInt(params.initialPage[0], 10)
-    : parseInt(params.initialPage || "0", 10);
+  const hasExplicitInitialPageParam =
+    params.initialPage !== undefined && params.initialPage !== null;
+  const initialPageRaw = Array.isArray(params.initialPage)
+    ? params.initialPage[0]
+    : params.initialPage;
+  const parsedInitialPage = Number.parseInt(initialPageRaw ?? "0", 10);
+  const initialPage =
+    Number.isFinite(parsedInitialPage) && parsedInitialPage >= 0
+      ? parsedInitialPage
+      : 0;
 
   const { setChapter, setCurrentPage, chapter } = useReaderStore();
 
@@ -45,6 +54,13 @@ export default function ReaderScreen() {
   const overlayOpacity = useRef(new Animated.Value(1)).current;
   const [currentOverlayChapterId, setCurrentOverlayChapterId] = useState(initialChapterId);
   const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(initialPage > 0 ? initialPage : 0);
+  const [currentProgressCursor, setCurrentProgressCursor] = useState(() => ({
+    chapterId: initialChapterId,
+    pageIndex: initialPage > 0 ? initialPage : 0,
+  }));
+  const [hasResolvedInitialProgress, setHasResolvedInitialProgress] = useState(
+    hasExplicitInitialPageParam
+  );
   const [chapterSwitchTargetId, setChapterSwitchTargetId] = useState<string | null>(null);
   const [pendingSeek, setPendingSeek] = useState<{
     chapterId: string;
@@ -65,6 +81,20 @@ export default function ReaderScreen() {
     staleTime: Infinity,
     enabled: Boolean(sourceId && mangaId),
   });
+  const mangaQuery = useQuery({
+    queryKey: sourceQueryFactory.manga(sourceId, mangaId),
+    queryFn: ({ signal }) => getSourceMangaDetails(sourceId, mangaId, signal),
+    staleTime: Infinity,
+    enabled: Boolean(sourceId && mangaId),
+  });
+  const initialChapterProgressQuery = useQuery(
+    chapterProgressQueryOptions(
+      sourceId,
+      mangaId,
+      initialChapterId,
+      Boolean(sourceId && mangaId && initialChapterId && !hasExplicitInitialPageParam)
+    )
+  );
 
   // Dynamically fetch pages for all active chapters
   const chapterPagesQueries = useQueries({
@@ -88,6 +118,22 @@ export default function ReaderScreen() {
     activeOverlayChapterQueryIndex >= 0
       ? chapterPagesQueries[activeOverlayChapterQueryIndex]
       : undefined;
+
+  const chapterMetaById = useMemo(
+    () => new Map((chaptersQuery.data ?? []).map((chapter) => [chapter.id, chapter])),
+    [chaptersQuery.data]
+  );
+
+  const chapterPageCountById = useMemo(() => {
+    const counts = new Map<string, number>();
+    activeChapterIds.forEach((chapterId, index) => {
+      const chapterPages = chapterPagesQueries[index]?.data;
+      if (chapterPages) {
+        counts.set(chapterId, chapterPages.length);
+      }
+    });
+    return counts;
+  }, [activeChapterIds, chapterPagesQueries]);
 
   const isChapterSwitching = Boolean(chapterSwitchTargetId);
   const chapterSwitchMeta = chaptersQuery.data?.find((c) => c.id === chapterSwitchTargetId);
@@ -121,17 +167,59 @@ export default function ReaderScreen() {
 
       setChapter(readerChapter);
 
-      if (initialPage > 0) {
+      if (hasExplicitInitialPageParam && initialPage > 0) {
         setCurrentPage(initialPage);
       }
     }
   }, [
+    hasExplicitInitialPageParam,
     primaryChapterPages,
     initialChapterId,
     sourceId,
     mangaId,
     initialPage,
     setChapter,
+    setCurrentPage,
+  ]);
+
+  const hasAppliedPersistedInitialPageRef = useRef(false);
+  useEffect(() => {
+    if (hasExplicitInitialPageParam || !initialChapterId) {
+      return;
+    }
+
+    if (hasAppliedPersistedInitialPageRef.current) {
+      return;
+    }
+
+    if (initialChapterProgressQuery.isPending) {
+      return;
+    }
+
+    hasAppliedPersistedInitialPageRef.current = true;
+    setHasResolvedInitialProgress(true);
+
+    const persistedPageIndex = initialChapterProgressQuery.data?.pageIndex ?? 0;
+    if (persistedPageIndex <= 0) {
+      return;
+    }
+
+    setCurrentOverlayChapterId(initialChapterId);
+    setCurrentOverlayPageIndex(persistedPageIndex);
+    setCurrentProgressCursor({
+      chapterId: initialChapterId,
+      pageIndex: persistedPageIndex,
+    });
+    setCurrentPage(persistedPageIndex);
+    setPendingSeek({
+      chapterId: initialChapterId,
+      pageIndex: persistedPageIndex,
+    });
+  }, [
+    hasExplicitInitialPageParam,
+    initialChapterId,
+    initialChapterProgressQuery.data?.pageIndex,
+    initialChapterProgressQuery.isPending,
     setCurrentPage,
   ]);
 
@@ -261,27 +349,20 @@ export default function ReaderScreen() {
       return;
     }
 
-    console.log("[ReaderScreen] handleEndReached CALLED with chapterId:", reachedChapterId);
-    console.log("[ReaderScreen] activeChapterIds Currently:", activeChapterIds);
-    console.log("[ReaderScreen] is chaptersQuery loaded?", !!chaptersQuery.data);
-
     if (!chaptersQuery.data) return;
 
     // Only preload if we reached the boundary of the explicitly *last* chapter in our list
     if (reachedChapterId !== activeChapterIds[activeChapterIds.length - 1]) {
-      console.log("[ReaderScreen] ABORTING: Reached chapter is not the last active chapter.");
       return;
     }
 
     const currentIndex = chaptersQuery.data.findIndex(c => c.id === reachedChapterId);
-    console.log("[ReaderScreen] currentIndex in master list:", currentIndex);
 
     // Assuming chapters are sorted newest first (index 0 is newest).
     // Reading direction goes from older to newer -> so index - 1
     const nextIndex = currentIndex - 1;
     if (nextIndex >= 0) {
       const nextChapterId = chaptersQuery.data[nextIndex].id;
-      console.log("[ReaderScreen] PRELOADING NEXT CHAPTER:", nextChapterId);
       if (!activeChapterIds.includes(nextChapterId)) {
         setActiveChapterIds(prev => {
           let updated = [...prev, nextChapterId];
@@ -297,8 +378,6 @@ export default function ReaderScreen() {
           return updated;
         });
       }
-    } else {
-      console.log("[ReaderScreen] No next chapter found (hit the end of the manga).");
     }
   }, [chaptersQuery.data, activeChapterIds]);
 
@@ -317,9 +396,15 @@ export default function ReaderScreen() {
     if (switchingTo && chapterId !== switchingTo) {
       return;
     }
+    const normalizedPageIndex = Math.max(0, Math.floor(pageIndex));
     setCurrentOverlayChapterId(chapterId);
-    setCurrentOverlayPageIndex(pageIndex);
-  }, []);
+    setCurrentOverlayPageIndex(normalizedPageIndex);
+    setCurrentProgressCursor({
+      chapterId,
+      pageIndex: normalizedPageIndex,
+    });
+    setCurrentPage(normalizedPageIndex);
+  }, [setCurrentPage]);
 
   const handleChapterChanged = useCallback((chapterId: string) => {
     const switchingTo = chapterSwitchTargetRef.current;
@@ -350,6 +435,47 @@ export default function ReaderScreen() {
     setActiveChapterIds([targetChapterId]);
     setPendingSeek({ chapterId: targetChapterId, pageIndex: 0 });
   }, []);
+
+  const progressPayload = useMemo(() => {
+    const chapterId = currentProgressCursor.chapterId;
+    if (!sourceId || !mangaId || !chapterId) {
+      return null;
+    }
+
+    const chapterMeta = chapterMetaById.get(chapterId);
+    const totalPages = chapterPageCountById.get(chapterId);
+
+    return {
+      sourceId,
+      mangaId,
+      chapterId,
+      chapterTitle: chapterMeta?.title,
+      chapterNumber: chapterMeta?.number,
+      mangaTitle: mangaQuery.data?.title ?? mangaId,
+      mangaThumbnailUrl: mangaQuery.data?.thumbnailUrl,
+      pageIndex: currentProgressCursor.pageIndex,
+      totalPages: totalPages && totalPages > 0 ? totalPages : undefined,
+    };
+  }, [
+    chapterMetaById,
+    chapterPageCountById,
+    currentProgressCursor.chapterId,
+    currentProgressCursor.pageIndex,
+    mangaId,
+    mangaQuery.data?.thumbnailUrl,
+    mangaQuery.data?.title,
+    sourceId,
+  ]);
+
+  useReaderProgressSync({
+    payload: progressPayload,
+    enabled: Boolean(
+      sourceId &&
+        mangaId &&
+        currentProgressCursor.chapterId &&
+        hasResolvedInitialProgress
+    ),
+  });
 
   if (!chapter && (primaryQuery?.isPending || !primaryQuery?.data)) {
     return (
