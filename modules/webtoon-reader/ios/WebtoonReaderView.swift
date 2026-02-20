@@ -27,6 +27,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   
   // Track the previously emitted chapter to avoid duplicate events
   private var lastEmittedChapterId: String? = nil
+  private var lastEmittedPageId: String? = nil
   
   // Track end indices of each chapter for precise preloading
   private var chapterEndIndices: [String: Int] = [:]
@@ -166,7 +167,11 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
     
     DispatchQueue.main.async {
+        // If we jump to an item far away, the UICollectionView will use the fallback viewport heights
+        // we added in `sizeForItemAt` for unloaded intermediate items. We use `.top` so we land
+        // exactly at the boundary of the placeholder block.
         self.collectionView.scrollToItem(at: targetIndexPath, at: .top, animated: false)
+        self.emitPageVisible(page: targetPage)
     }
   }
   
@@ -180,27 +185,38 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
     
     let width = collectionView.bounds.width
+    let viewportHeight = collectionView.bounds.height
     
     if page.isTransition {
        return CGSize(width: width, height: 200) // Fixed height for Transition cell
     }
     
-    // Use dynamic aspect ratio if loaded, otherwise fallback to React Native payload
-    let ratio = dynamicAspectRatios[page.id] ?? page.aspectRatio
-    let height = ratio > 0 ? (width / ratio) : width
+    // 1. If we have dynamically downloaded the image and tracked its true ratio, use it (highest priority)
+    if let dynamicRatio = dynamicAspectRatios[page.id], dynamicRatio > 0 {
+      return CGSize(width: width, height: width / dynamicRatio)
+    }
     
-    return CGSize(width: width, height: height)
+    // 2. If React Native explicitly provided a non-default ratio (> 0 and != 1.0), use it
+    if page.aspectRatio > 0 && page.aspectRatio != 1.0 {
+      return CGSize(width: width, height: width / page.aspectRatio)
+    }
+    
+    // 3. FALLBACK: The image is unloaded or has a default (1.0) ratio.
+    // Like Mihon, we allocate exactly one viewport height for the placeholder.
+    // This allows the layout to estimate the total scroll height without jumping 
+    // when skipping over 10 unloaded gaps to reach page 15.
+    let fallbackHeight = viewportHeight > 0 ? viewportHeight : width
+    return CGSize(width: width, height: fallbackHeight)
   }
   
-  // MARK: - UIScrollViewDelegate (Scroll Tracking)
+  // MARK: - Event Emission Helper
   
-  func scrollViewDidScroll(_ scrollView: UIScrollView) {
-    let indexPaths = collectionView.indexPathsForVisibleItems.sorted()
-    
-    guard let firstIndexPath = indexPaths.first,
-          let page = dataSource.itemIdentifier(for: firstIndexPath) else {
-      return
+  private func emitPageVisible(page: WebtoonPage) {
+    // Deduplicate identical events to prevent bridging spam during layout phases / resting state
+    if page.id == lastEmittedPageId {
+        return
     }
+    lastEmittedPageId = page.id
     
     // Check if the current visible chapter has changed
     if page.chapterId != lastEmittedChapterId {
@@ -219,6 +235,19 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
             "pageIndex": pageIndex
         ])
     }
+  }
+
+  // MARK: - UIScrollViewDelegate (Scroll Tracking)
+  
+  func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    let indexPaths = collectionView.indexPathsForVisibleItems.sorted()
+    
+    guard let firstIndexPath = indexPaths.first,
+          let page = dataSource.itemIdentifier(for: firstIndexPath) else {
+      return
+    }
+    
+    emitPageVisible(page: page)
     
     // Fallback: Also check if the visible items trigger the preload threshold
     // just in case prefetching skipped a fast jump.
