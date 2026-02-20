@@ -14,7 +14,8 @@ export type WebtoonPage = {
   chapterId: string;   // ID/Title of the chapter this page belongs to
   aspectRatio: number; // width / height 
   isTransition?: boolean; // If true, instructs native view to render the interstitial transition cell
-  transitionText?: string; // Text to render inside the transition cell
+  previousChapterTitle?: string; // Top row displayed in Transition cell
+  nextChapterTitle?: string; // Bottom row displayed in Transition cell
 };
 
 export type OnChapterChangedEventPayload = {
@@ -25,9 +26,17 @@ export type OnEndReachedEventPayload = {
   chapterId: string;
 };
 
+export type OnPageChangedEventPayload = {
+  chapterId: string;
+  pageIndex: number;
+};
+
 export type WebtoonReaderViewProps = {
   data: WebtoonPage[];
   onEndReached?: (event: { nativeEvent: OnEndReachedEventPayload }) => void;
   onChapterChanged?: (event: { nativeEvent: OnChapterChangedEventPayload }) => void;
+  onSingleTap?: () => void;
+  onPageChanged?: (event: { nativeEvent: OnPageChangedEventPayload }) => void;
   style?: StyleProp<ViewStyle>;
+  ref?: React.Ref<any>;
 };

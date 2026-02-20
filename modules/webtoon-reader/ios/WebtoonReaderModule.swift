@@ -11,7 +11,11 @@ public class WebtoonReaderModule: Module {
         view.updateData(data: data)
       }
 
-      Events("onEndReached", "onChapterChanged")
+      Events("onEndReached", "onChapterChanged", "onSingleTap", "onPageChanged")
+      
+      AsyncFunction("scrollToIndex") { (view: WebtoonReaderView, chapterId: String, index: Int) in
+        view.scrollToIndex(chapterId: chapterId, index: index)
+      }
     }
   }
 }

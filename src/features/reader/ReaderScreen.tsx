@@ -5,10 +5,12 @@ import { sourceQueryFactory } from "@/services/source/core/queryFactory";
 import { getSourceChapterPages } from "@/services/source/core/runtime";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Animated, StyleSheet, View } from "react-native";
+import { ReaderBottomOverlay } from "./components/ReaderBottomOverlay";
 import { ReaderLoadingScreen } from "./components/ReaderLoadingScreen";
-import { NativeWebtoonReader } from "./NativeReader/WebtoonReader";
+import { ReaderTopOverlay } from "./components/ReaderTopOverlay";
+import { NativeWebtoonReader, type NativeWebtoonReaderRef } from "./NativeReader/WebtoonReader";
 
 export default function ReaderScreen() {
   const params = useLocalSearchParams<{
@@ -34,6 +36,13 @@ export default function ReaderScreen() {
   const { setChapter, setCurrentPage, chapter } = useReaderStore();
 
   const [activeChapterIds, setActiveChapterIds] = useState<string[]>([initialChapterId]);
+
+  // Overlay State Tracking driven by Native Swift scroll events
+  const nativeReaderRef = useRef<NativeWebtoonReaderRef>(null);
+  const [isOverlayVisible, setOverlayVisible] = useState(true);
+  const overlayOpacity = useRef(new Animated.Value(1)).current;
+  const [currentOverlayChapterId, setCurrentOverlayChapterId] = useState(initialChapterId);
+  const [currentOverlayPageIndex, setCurrentOverlayPageIndex] = useState(0);
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -165,6 +174,25 @@ export default function ReaderScreen() {
     }
   }, [chaptersQuery.data, activeChapterIds]);
 
+  const toggleOverlay = useCallback(() => {
+    Animated.timing(overlayOpacity, {
+      toValue: isOverlayVisible ? 0 : 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setOverlayVisible(!isOverlayVisible);
+    });
+  }, [isOverlayVisible, overlayOpacity]);
+
+  const handlePageChanged = useCallback((chapterId: string, pageIndex: number) => {
+    setCurrentOverlayChapterId(chapterId);
+    setCurrentOverlayPageIndex(pageIndex);
+  }, []);
+
+  const handleSeek = useCallback((pageIndex: number) => {
+    nativeReaderRef.current?.seekTo(currentOverlayChapterId, Math.floor(pageIndex));
+  }, [currentOverlayChapterId]);
+
   const primaryQuery = chapterPagesQueries[0];
 
   if (primaryQuery?.isPending || !primaryQuery?.data) {
@@ -200,13 +228,86 @@ export default function ReaderScreen() {
     );
   }
 
+  // Derive active rendering props from the Swift tracking state we hold
+  const activeChapterMeta = chaptersQuery.data?.find(c => c.id === currentOverlayChapterId);
+  const currentChapterTitleDisplay = activeChapterMeta?.title ||
+    (activeChapterMeta?.number ? `Chapter ${activeChapterMeta.number}` : "Chapter");
+
+  // Find total pages for the currently focused chapter by checking its data array
+  const activeChapterQuery = chapterPagesQueries.find(q =>
+    activeChapterIds.indexOf(currentOverlayChapterId) === chapterPagesQueries.indexOf(q));
+  const activeChapterTotalPages = activeChapterQuery?.data?.length || 0;
+
   return (
-    <>
+    <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
       <NativeWebtoonReader
+        ref={nativeReaderRef}
         data={combinedData}
         onEndReached={handleEndReached}
+        onSingleTap={toggleOverlay}
+        onPageChanged={handlePageChanged}
       />
-    </>
+
+      {/* Floating Overlays */}
+      <Animated.View style={[styles.topOverlay, { opacity: overlayOpacity }]} pointerEvents={isOverlayVisible ? 'auto' : 'none'}>
+        <ReaderTopOverlay chapterTitle={currentChapterTitleDisplay} />
+      </Animated.View>
+
+      <Animated.View style={[styles.bottomOverlay, { opacity: overlayOpacity }]} pointerEvents={isOverlayVisible ? 'auto' : 'none'}>
+        <ReaderBottomOverlay
+          currentChapterId={currentOverlayChapterId}
+          currentPageIndex={currentOverlayPageIndex}
+          totalVisiblePages={activeChapterTotalPages}
+          onSeek={handleSeek}
+          onNextChapter={() => {
+            // Determine next chapter logically
+            const currentIndex = chaptersQuery.data?.findIndex(c => c.id === currentOverlayChapterId) ?? -1;
+            const nextIndex = currentIndex - 1; // Reverse sort
+            if (nextIndex >= 0 && chaptersQuery.data) {
+              const nextId = chaptersQuery.data[nextIndex].id;
+              if (!activeChapterIds.includes(nextId)) {
+                setActiveChapterIds(prev => [...prev, nextId]);
+              }
+              // Give JS time to fetch and render the payload, then seek to its index 0
+              setTimeout(() => nativeReaderRef.current?.seekTo(nextId, 0), 300);
+            }
+          }}
+          onPrevChapter={() => {
+            // Determine previous chapter logically
+            const currentIndex = chaptersQuery.data?.findIndex(c => c.id === currentOverlayChapterId) ?? -1;
+            const prevIndex = currentIndex + 1; // Reverse sort
+            if (prevIndex < (chaptersQuery.data?.length ?? 0) && chaptersQuery.data) {
+              const prevId = chaptersQuery.data[prevIndex].id;
+              if (!activeChapterIds.includes(prevId)) {
+                setActiveChapterIds(prev => [prevId, ...prev]);
+              }
+              setTimeout(() => nativeReaderRef.current?.seekTo(prevId, 0), 300);
+            }
+          }}
+        />
+      </Animated.View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0F0F12',
+  },
+  topOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  }
+});

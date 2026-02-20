@@ -17,6 +17,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   let onEndReached = EventDispatcher()
   let onChapterChanged = EventDispatcher()
   let onSingleTap = EventDispatcher()
+  let onPageChanged = EventDispatcher()
   
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
@@ -149,6 +150,26 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     dataSource.apply(snapshot, animatingDifferences: false)
   }
   
+  public func scrollToIndex(chapterId: String, index: Int) {
+    // Find the exact page matching the provided chapter and relative index
+    // Assuming ID is format: "chapterId-index"
+    let targetId = "\(chapterId)-\(index)"
+    
+    // Fallback: If transitioning, find the transition cell or nearest
+    let identifier = dataSource.snapshot().itemIdentifiers.first {
+        $0.id == targetId
+    }
+    
+    guard let targetPage = identifier,
+          let targetIndexPath = dataSource.indexPath(for: targetPage) else {
+        return
+    }
+    
+    DispatchQueue.main.async {
+        self.collectionView.scrollToItem(at: targetIndexPath, at: .top, animated: false)
+    }
+  }
+  
   // MARK: - UICollectionViewDelegateFlowLayout
   
   // Need to implement layout delegate behavior separately from diffable data source.
@@ -187,6 +208,16 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       onChapterChanged([
         "chapterId": page.chapterId
       ])
+    }
+    
+    // Extract relative page index within the chapter
+    // (Assuming the ID follows "chapterId-index" format from React Native)
+    let parts = page.id.components(separatedBy: "-")
+    if let lastItem = parts.last, let pageIndex = Int(lastItem) {
+        onPageChanged([
+            "chapterId": page.chapterId,
+            "pageIndex": pageIndex
+        ])
     }
     
     // Fallback: Also check if the visible items trigger the preload threshold
