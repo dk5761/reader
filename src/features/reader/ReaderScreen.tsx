@@ -117,14 +117,13 @@ export default function ReaderScreen() {
   );
 
   // Dynamically fetch pages for all active chapters
-  const chapterPagesStaleTime =
-    sourceId === "readcomiconline" ? 0 : Infinity;
+  const chapterPagesStaleTime = Infinity;
   const chapterPagesQueries = useQueries({
     queries: activeChapterIds.map((id) => ({
       queryKey: sourceQueryFactory.chapterPages(sourceId, id),
       queryFn: ({ signal }) => getSourceChapterPages(sourceId, id, signal),
       staleTime: chapterPagesStaleTime,
-      refetchOnMount: sourceId === "readcomiconline" ? "always" : true,
+      refetchOnMount: true,
       enabled: Boolean(sourceId && id),
     })),
   });
