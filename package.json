@@ -15,7 +15,7 @@
     "update:production": "eas update --channel production",
     "prebuild:android": "expo prebuild --platform android",
     "prebuild:ios": "expo prebuild --platform ios",
-    "build:production": "eas build --platform ios  --profile production",
+    "build:production": "eas build --platform ios --local --profile production",
     "build:preview": "eas build --platform ios --local --profile preview"
   },
   "dependencies": {
