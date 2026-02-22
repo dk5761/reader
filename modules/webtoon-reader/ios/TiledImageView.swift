@@ -242,11 +242,37 @@ class TiledImageView: UIView {
   private var isLoading = false
   private var shouldReportPreviewFailure = false
 
+  private let loadingOverlayView: UIView = {
+    let view = UIView()
+    view.backgroundColor = UIColor(white: 0, alpha: 0.4)
+    view.isHidden = true
+    view.isUserInteractionEnabled = false
+    return view
+  }()
+
+  private let loadingStack: UIStackView = {
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.spacing = 8
+    stack.alignment = .center
+    stack.distribution = .fill
+    return stack
+  }()
+
   private let activityIndicator: UIActivityIndicatorView = {
-    let indicator = UIActivityIndicatorView(style: .medium)
+    let indicator = UIActivityIndicatorView(style: .large)
     indicator.color = .white
     indicator.hidesWhenStopped = true
     return indicator
+  }()
+
+  private let loadingLabel: UILabel = {
+    let label = UILabel()
+    label.text = "Loading page..."
+    label.font = .systemFont(ofSize: 13, weight: .medium)
+    label.textColor = UIColor(white: 1.0, alpha: 0.95)
+    label.textAlignment = .center
+    return label
   }()
 
   private let errorOverlayView: UIView = {
@@ -295,12 +321,24 @@ class TiledImageView: UIView {
 
   private let retryButton: UIButton = {
     let button = UIButton(type: .system)
-    button.setTitle("Retry", for: .normal)
-    button.setTitleColor(.white, for: .normal)
-    button.backgroundColor = UIColor(white: 1.0, alpha: 0.15)
-    button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
-    button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
-    button.layer.cornerRadius = 8
+    if #available(iOS 15.0, *) {
+      var config = UIButton.Configuration.plain()
+      var attributedTitle = AttributedString("Retry")
+      attributedTitle.font = .systemFont(ofSize: 14, weight: .semibold)
+      config.attributedTitle = attributedTitle
+      config.baseForegroundColor = .white
+      config.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 14, bottom: 8, trailing: 14)
+      config.background.backgroundColor = UIColor(white: 1.0, alpha: 0.15)
+      config.background.cornerRadius = 8
+      button.configuration = config
+    } else {
+      button.setTitle("Retry", for: .normal)
+      button.setTitleColor(.white, for: .normal)
+      button.backgroundColor = UIColor(white: 1.0, alpha: 0.15)
+      button.titleLabel?.font = .systemFont(ofSize: 14, weight: .semibold)
+      button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
+      button.layer.cornerRadius = 8
+    }
     return button
   }()
 
@@ -318,8 +356,19 @@ class TiledImageView: UIView {
     backgroundColor = .clear
     addSubview(proxyImageView)
     addSubview(tiledLayerView)
-    addSubview(activityIndicator)
+    addSubview(loadingOverlayView)
     addSubview(errorOverlayView)
+
+    loadingOverlayView.addSubview(loadingStack)
+    loadingStack.addArrangedSubview(activityIndicator)
+    loadingStack.addArrangedSubview(loadingLabel)
+    loadingStack.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      loadingStack.centerXAnchor.constraint(equalTo: loadingOverlayView.centerXAnchor),
+      loadingStack.centerYAnchor.constraint(equalTo: loadingOverlayView.centerYAnchor),
+      loadingStack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlayView.leadingAnchor, constant: 20),
+      loadingStack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlayView.trailingAnchor, constant: -20)
+    ])
 
     errorOverlayView.addSubview(errorContentStack)
     errorContentStack.addArrangedSubview(errorIconView)
@@ -357,7 +406,7 @@ class TiledImageView: UIView {
     super.layoutSubviews()
     proxyImageView.frame = bounds
     tiledLayerView.frame = bounds
-    activityIndicator.center = CGPoint(x: bounds.midX, y: bounds.midY)
+    loadingOverlayView.frame = bounds
     errorOverlayView.frame = bounds
   }
 
@@ -369,6 +418,20 @@ class TiledImageView: UIView {
     proxyImageView.alpha = 0
     tiledLayerView.configure(source: nil, viewportSize: .zero)
     applyRenderState(.idle)
+  }
+
+  func showLoadingPlaceholder(size: CGSize) {
+    imagePath = nil
+    currentPath = nil
+    currentSize = size
+    frame = CGRect(origin: .zero, size: size)
+    proxyImageView.frame = CGRect(origin: .zero, size: size)
+    tiledLayerView.frame = CGRect(origin: .zero, size: size)
+    loadingOverlayView.frame = CGRect(origin: .zero, size: size)
+    proxyImageView.image = nil
+    proxyImageView.alpha = 0
+    tiledLayerView.configure(source: nil, viewportSize: size)
+    applyRenderState(.loading)
   }
 
   func configure(withLocalPath path: String, exactSize: CGSize) {
@@ -395,8 +458,7 @@ class TiledImageView: UIView {
     frame = CGRect(origin: .zero, size: exactSize)
     proxyImageView.frame = CGRect(origin: .zero, size: exactSize)
     tiledLayerView.frame = CGRect(origin: .zero, size: exactSize)
-    activityIndicator.frame = CGRect(origin: .zero, size: exactSize)
-    activityIndicator.center = CGPoint(x: exactSize.width / 2, y: exactSize.height / 2)
+    loadingOverlayView.frame = CGRect(origin: .zero, size: exactSize)
     proxyImageView.alpha = 0
     proxyImageView.image = nil
     tiledLayerView.configure(source: nil, viewportSize: exactSize)
@@ -409,7 +471,6 @@ class TiledImageView: UIView {
 
       guard !path.isEmpty else {
         DispatchQueue.main.async {
-          self.activityIndicator.stopAnimating()
           self.applyRenderState(.error(message: "Tap retry to try again."))
           self.onImageError?("Image path is empty.")
         }
@@ -455,22 +516,28 @@ class TiledImageView: UIView {
     switch state {
     case .idle:
       activityIndicator.stopAnimating()
+      loadingOverlayView.isHidden = true
       errorOverlayView.isHidden = true
       errorMessageLabel.text = "Tap retry to try again."
       setLoading(false)
     case .loading:
+      loadingOverlayView.isHidden = false
+      bringSubviewToFront(loadingOverlayView)
       errorOverlayView.isHidden = true
       activityIndicator.startAnimating()
       setLoading(true)
     case .ready:
       activityIndicator.stopAnimating()
+      loadingOverlayView.isHidden = true
       errorOverlayView.isHidden = true
       errorMessageLabel.text = "Tap retry to try again."
       setLoading(false)
     case .error(let message):
       activityIndicator.stopAnimating()
+      loadingOverlayView.isHidden = true
       errorMessageLabel.text = message
       errorOverlayView.isHidden = false
+      bringSubviewToFront(errorOverlayView)
       setLoading(false)
     }
   }

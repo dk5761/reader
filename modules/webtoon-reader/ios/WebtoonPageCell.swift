@@ -106,7 +106,7 @@ class WebtoonPageCell: UICollectionViewCell {
 
     let rawPath = page.localPath
     guard !rawPath.isEmpty else {
-      tiledImageView.clear()
+      tiledImageView.showLoadingPlaceholder(size: targetSize)
       return
     }
 
@@ -118,7 +118,7 @@ class WebtoonPageCell: UICollectionViewCell {
     }
 
     guard resolvedPath.hasPrefix("/") else {
-      tiledImageView.clear()
+      tiledImageView.showLoadingPlaceholder(size: targetSize)
       return
     }
 
