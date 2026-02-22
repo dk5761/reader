@@ -14,7 +14,9 @@
     "lint": "expo lint",
     "update:production": "eas update --channel production",
     "prebuild:android": "expo prebuild --platform android",
-    "prebuild:ios": "expo prebuild --platform ios"
+    "prebuild:ios": "expo prebuild --platform ios",
+    "build:production": "eas build --platform ios  --profile production",
+    "build:preview": "eas build --platform ios --local --profile preview"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
