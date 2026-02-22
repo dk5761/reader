@@ -18,6 +18,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   let onChapterChanged = EventDispatcher()
   let onSingleTap = EventDispatcher()
   let onPageChanged = EventDispatcher()
+  let onScrollBegin = EventDispatcher()
 
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
@@ -311,6 +312,10 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     emitPageVisible(page: page)
     emitEndReachedIfNeeded(chapterId: page.chapterId, pageIndex: page.pageIndex)
+  }
+
+  func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    onScrollBegin([:])
   }
 
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {

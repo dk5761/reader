@@ -39,6 +39,7 @@ export type WebtoonReaderViewProps = {
   onChapterChanged?: (event: { nativeEvent: OnChapterChangedEventPayload }) => void;
   onSingleTap?: () => void;
   onPageChanged?: (event: { nativeEvent: OnPageChangedEventPayload }) => void;
+  onScrollBegin?: () => void;
   style?: StyleProp<ViewStyle>;
   ref?: React.Ref<any>;
 };

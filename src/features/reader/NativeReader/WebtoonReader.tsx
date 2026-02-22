@@ -19,14 +19,16 @@ type NativeWebtoonReaderProps = {
     onChapterChanged?: (chapterId: string) => void;
     onSingleTap?: () => void;
     onPageChanged?: (chapterId: string, pageIndex: number) => void;
+    onScrollBegin?: () => void;
 };
 
-export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({ 
+export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
     data,
     onEndReached,
     onChapterChanged,
     onSingleTap,
     onPageChanged,
+    onScrollBegin,
 }, ref) => {
     const nativeViewRef = React.useRef<any>(null);
 
@@ -69,6 +71,13 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
         [onPageChanged]
     );
 
+    const handleScrollBegin = React.useCallback(
+        () => {
+            onScrollBegin?.();
+        },
+        [onScrollBegin]
+    );
+
     return (
         <View style={styles.container}>
             <WebtoonReaderView
@@ -79,6 +88,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 onChapterChanged={handleChapterChanged}
                 onSingleTap={onSingleTap}
                 onPageChanged={handlePageChanged}
+                onScrollBegin={handleScrollBegin}
             />
         </View>
     );

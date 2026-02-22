@@ -391,6 +391,17 @@ export default function ReaderScreen() {
     });
   }, [isOverlayVisible, overlayOpacity]);
 
+  const hideOverlay = useCallback(() => {
+    if (!isOverlayVisible) return; // Already hidden
+    Animated.timing(overlayOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setOverlayVisible(false);
+    });
+  }, [isOverlayVisible, overlayOpacity]);
+
   const handlePageChanged = useCallback((chapterId: string, pageIndex: number) => {
     const switchingTo = chapterSwitchTargetRef.current;
     if (switchingTo && chapterId !== switchingTo) {
@@ -528,6 +539,7 @@ export default function ReaderScreen() {
         onChapterChanged={handleChapterChanged}
         onSingleTap={toggleOverlay}
         onPageChanged={handlePageChanged}
+        onScrollBegin={hideOverlay}
       />
 
       {/* Floating Overlays */}
