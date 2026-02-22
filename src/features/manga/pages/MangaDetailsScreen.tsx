@@ -598,12 +598,12 @@ export default function MangaDetailsScreen() {
               }}
             >
               <View className="w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">
-                <View style={{ aspectRatio: 2 / 3 }}>
+                <View>
                   {details.thumbnailUrl ? (
                     <Image
                       source={{ uri: details.thumbnailUrl }}
                       contentFit="cover"
-                      style={{ width: "100%", height: "100%" }}
+                      style={{ width: "100%", height: 170 }}
                     />
                   ) : (
                     <View className="h-full items-center justify-center">
