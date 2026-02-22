@@ -1,7 +1,5 @@
-import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { Image } from "expo-image";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { PressableScale } from "pressto";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -17,12 +15,14 @@ import {
   sourceQueryFactory,
   type SourceManga,
 } from "@/services/source";
+import { libraryEntriesQueryOptions } from "@/services/library";
 import { useSource } from "@/services/source";
 import {
   ActionPillButton,
   BackButton,
   CenteredLoadingState,
   CenteredState,
+  MangaGridCard,
   ScreenHeader,
   SearchInput,
   SelectableChip,
@@ -30,7 +30,7 @@ import {
 
 type BrowseMode = "popular" | "latest" | "search";
 
-const GRID_COLUMNS = 3;
+const GRID_COLUMNS = 2;
 const GRID_HORIZONTAL_PADDING = 16;
 const GRID_COLUMN_GAP = 12;
 
@@ -116,6 +116,7 @@ export default function SourceMangaListScreen() {
   const routeQueryParam = getDecodedParam(params.q).trim();
 
   const { sources, setSelectedSourceId } = useSource();
+  const libraryEntriesQuery = useQuery(libraryEntriesQueryOptions());
   const source = useMemo(
     () => sources.find((item) => item.id === routeSourceId) ?? null,
     [routeSourceId, sources]
@@ -258,6 +259,13 @@ export default function SourceMangaListScreen() {
     () => mangaQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [mangaQuery.data]
   );
+  const libraryMembershipSet = useMemo(
+    () =>
+      new Set(
+        (libraryEntriesQuery.data ?? []).map((entry) => `${entry.sourceId}::${entry.mangaId}`)
+      ),
+    [libraryEntriesQuery.data]
+  );
 
   const gridItemWidth = useMemo(() => {
     const totalGaps = GRID_COLUMN_GAP * (GRID_COLUMNS - 1);
@@ -376,8 +384,11 @@ export default function SourceMangaListScreen() {
             columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
             ItemSeparatorComponent={() => <View className="h-4" />}
             renderItem={({ item }) => (
-              <PressableScale
-                style={{ width: gridItemWidth }}
+              <MangaGridCard
+                width={gridItemWidth}
+                title={item.title}
+                thumbnailUrl={item.thumbnailUrl}
+                showInLibraryChip={libraryMembershipSet.has(`${routeSourceId}::${item.id}`)}
                 onPress={() => {
                   router.push({
                     pathname: "/manga/[sourceId]/[mangaId]",
@@ -387,32 +398,7 @@ export default function SourceMangaListScreen() {
                     },
                   });
                 }}
-              >
-                <View className="pb-2">
-                  <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
-                    <View style={{ aspectRatio: 2 / 3 }}>
-                      {item.thumbnailUrl ? (
-                        <Image
-                          source={{ uri: item.thumbnailUrl }}
-                          contentFit="cover"
-                          style={{ width: "100%", height: "100%" }}
-                          transition={120}
-                        />
-                      ) : (
-                        <View className="h-full w-full items-center justify-center">
-                          <Text className="text-xs text-[#6D6E78]">No cover</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                  <Text
-                    numberOfLines={2}
-                    className="mt-2 pr-1 text-xs font-medium leading-5 text-[#D8D9E0]"
-                  >
-                    {item.title}
-                  </Text>
-                </View>
-              </PressableScale>
+              />
             )}
             onEndReachedThreshold={0.5}
             onEndReached={() => {

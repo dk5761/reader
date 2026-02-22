@@ -5,3 +5,4 @@ export * from "./CollapsibleText";
 export * from "./ScreenHeader";
 export * from "./SearchInput";
 export * from "./SelectableChip";
+export * from "./MangaGridCard";

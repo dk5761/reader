@@ -3,9 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "heroui-native";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Text, View } from "react-native";
+import { Alert, FlatList, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { latestReadingProgressQueryOptions } from "@/services/progress";
 import { useSource } from "@/services/source";
 import type {
   LibrarySortDirection,
@@ -32,11 +31,11 @@ import {
 
 export default function LibraryScreen() {
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const { sources } = useSource();
   const insets = useSafeAreaInsets();
 
   const settingsQuery = useQuery(libraryViewSettingsQueryOptions());
-  const progressQuery = useQuery(latestReadingProgressQueryOptions(500));
   const updateViewSettingsMutation = useUpdateLibraryViewSettingsMutation();
   const bulkRemoveMutation = useBulkRemoveLibraryEntriesMutation();
 
@@ -107,16 +106,16 @@ export default function LibraryScreen() {
     [allowedSourceIdSet, entriesQuery.data]
   );
 
-  const progressByManga = useMemo(
-    () =>
-      new Map(
-        (progressQuery.data ?? []).map((entry) => [
-          `${entry.sourceId}::${entry.mangaId}`,
-          entry,
-        ])
-      ),
-    [progressQuery.data]
-  );
+  const GRID_COLUMNS = 2;
+  const GRID_HORIZONTAL_PADDING = 16;
+  const GRID_COLUMN_GAP = 12;
+
+  const gridItemWidth = useMemo(() => {
+    const totalGaps = GRID_COLUMN_GAP * (GRID_COLUMNS - 1);
+    const totalPadding = GRID_HORIZONTAL_PADDING * 2;
+    const availableWidth = screenWidth - totalGaps - totalPadding;
+    return Math.max(1, Math.floor(availableWidth / GRID_COLUMNS));
+  }, [screenWidth]);
 
   const selectedCount = selectedEntryIds.length;
 
@@ -301,18 +300,19 @@ export default function LibraryScreen() {
         <FlatList
           style={{ flex: 1 }}
           data={libraryEntries}
+          numColumns={GRID_COLUMNS}
           keyExtractor={(item) => `${item.sourceId}::${item.mangaId}`}
+          columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
           contentContainerClassName="px-4 pb-24"
-          ItemSeparatorComponent={() => <View className="h-3" />}
+          ItemSeparatorComponent={() => <View className="h-4" />}
           ListHeaderComponent={<View className="h-2" />}
           renderItem={({ item }) => {
-            const progress = progressByManga.get(`${item.sourceId}::${item.mangaId}`);
             const isSelected = selectedEntryIds.includes(item.id);
 
             return (
               <LibraryEntryCard
                 entry={item}
-                continueProgress={progress}
+                width={gridItemWidth}
                 isSelectMode={isSelectMode}
                 isSelected={isSelected}
                 onPress={() => {
@@ -328,21 +328,6 @@ export default function LibraryScreen() {
                 }}
                 onLongPress={() => {
                   handleCardLongPress(item.id);
-                }}
-                onContinuePress={() => {
-                  if (!progress) {
-                    return;
-                  }
-
-                  router.push({
-                    pathname: "/reader/[sourceId]/[mangaId]/[chapterId]",
-                    params: {
-                      sourceId: progress.sourceId,
-                      mangaId: progress.mangaId,
-                      chapterId: progress.chapterId,
-                      initialPage: String(progress.pageIndex),
-                    },
-                  });
                 }}
               />
             );
