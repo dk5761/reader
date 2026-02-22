@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
 import type { SourceChapter } from "@/services/source";
-import type { MangaProgress } from "@/services/progress";
+import type { ReadingProgressEntry } from "@/services/progress";
 
 interface PendingBelowRule {
   anchorIndex: number;
@@ -10,7 +10,7 @@ interface PendingBelowRule {
 
 interface UseChapterProgressOptions {
   chapters: SourceChapter[];
-  progress: MangaProgress[] | undefined;
+  progress: ReadingProgressEntry[] | undefined;
   setChapterReadState: (input: {
     sourceId: string;
     mangaId: string;
@@ -37,7 +37,7 @@ interface UseChapterProgressOptions {
 }
 
 interface UseChapterProgressReturn {
-  progressByChapterId: Map<string, MangaProgress>;
+  progressByChapterId: Map<string, ReadingProgressEntry>;
   effectiveReadByChapterId: Map<string, boolean>;
   areAllBelowReadByIndex: boolean[];
   isMutationPending: boolean;

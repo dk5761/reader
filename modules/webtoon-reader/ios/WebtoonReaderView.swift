@@ -19,6 +19,8 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   let onSingleTap = EventDispatcher()
   let onPageChanged = EventDispatcher()
   let onScrollBegin = EventDispatcher()
+  let onLoadingStateChanged = EventDispatcher()
+  let onImageError = EventDispatcher()
 
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
@@ -107,6 +109,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       }
 
       cell.configure(with: page)
+      cell.onLoadingStateChanged = { [weak self] pageId, isLoading in
+        self?.onLoadingStateChanged(["pageId": pageId, "isLoading": isLoading])
+      }
+      cell.onImageError = { [weak self] pageId, error in
+        self?.onImageError(["pageId": pageId, "error": error])
+      }
       return cell
     }
   }
@@ -188,6 +196,41 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     DispatchQueue.main.async {
       self.collectionView.scrollToItem(at: targetIndexPath, at: .top, animated: false)
       self.emitPageVisible(page: page)
+    }
+  }
+
+  public func getCurrentPosition() -> [String: Any] {
+    guard let chapterId = lastEmittedChapterId,
+          let pageId = lastEmittedPageId else {
+      return ["chapterId": "", "pageIndex": -1]
+    }
+
+    let snapshot = dataSource.snapshot()
+    guard let page = snapshot.itemIdentifiers.first(where: { $0.id == pageId }) else {
+      return ["chapterId": chapterId, "pageIndex": -1]
+    }
+
+    return [
+      "chapterId": chapterId,
+      "pageIndex": page.pageIndex
+    ]
+  }
+
+  public func setZoomScale(scale: CGFloat) {
+    let indexPaths = collectionView.indexPathsForVisibleItems
+    for indexPath in indexPaths {
+      if let cell = collectionView.cellForItem(at: indexPath) as? WebtoonPageCell {
+        cell.setZoomScale(scale, animated: true)
+      }
+    }
+  }
+
+  public func resetZoom() {
+    let indexPaths = collectionView.indexPathsForVisibleItems
+    for indexPath in indexPaths {
+      if let cell = collectionView.cellForItem(at: indexPath) as? WebtoonPageCell {
+        cell.resetZoom(animated: true)
+      }
     }
   }
 

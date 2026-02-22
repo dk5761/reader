@@ -45,9 +45,10 @@ export default function HistoryScreen() {
   );
 
   const hasMore = visibleGroups.length >= entryLimit;
+  const isLoadingMore = groupedHistoryQuery.isFetching;
 
   const loadMore = () => {
-    if (!groupedHistoryQuery.isFetchingNext && hasMore) {
+    if (!isLoadingMore && hasMore) {
       setEntryLimit((prev) => prev + LOAD_MORE_INCREMENT);
     }
   };
@@ -162,10 +163,10 @@ export default function HistoryScreen() {
         ListFooterComponent={
           hasMore && visibleGroups.length > 0 ? (
             <View className="pt-4">
-              <PressableScale onPress={loadMore} disabled={groupedHistoryQuery.isFetchingNext}>
+              <PressableScale onPress={loadMore}>
                 <View className="items-center rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] px-4 py-3">
                   <Text className="text-sm font-medium text-white">
-                    {groupedHistoryQuery.isFetchingNext ? "Loading..." : "Load More"}
+                    {isLoadingMore ? "Loading..." : "Load More"}
                   </Text>
                 </View>
               </PressableScale>

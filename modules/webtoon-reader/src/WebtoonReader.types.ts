@@ -1,13 +1,5 @@
 import type { StyleProp, ViewStyle } from 'react-native';
 
-export type WebtoonReaderModuleEvents = {
-  onChange: (params: ChangeEventPayload) => void;
-};
-
-export type ChangeEventPayload = {
-  value: string;
-};
-
 export type WebtoonPage = {
   id: string;          // Unique identifier
   localPath: string;   // Local file path for native decode. Empty for placeholders/transitions.
@@ -33,6 +25,16 @@ export type OnPageChangedEventPayload = {
   pageIndex: number;
 };
 
+export type OnLoadingStateChangedEventPayload = {
+  pageId: string;
+  isLoading: boolean;
+};
+
+export type OnImageErrorEventPayload = {
+  pageId: string;
+  error: string;
+};
+
 export type WebtoonReaderViewProps = {
   data: WebtoonPage[];
   onEndReached?: (event: { nativeEvent: OnEndReachedEventPayload }) => void;
@@ -40,6 +42,8 @@ export type WebtoonReaderViewProps = {
   onSingleTap?: () => void;
   onPageChanged?: (event: { nativeEvent: OnPageChangedEventPayload }) => void;
   onScrollBegin?: () => void;
+  onLoadingStateChanged?: (event: { nativeEvent: OnLoadingStateChangedEventPayload }) => void;
+  onImageError?: (event: { nativeEvent: OnImageErrorEventPayload }) => void;
   style?: StyleProp<ViewStyle>;
   ref?: React.Ref<any>;
 };

@@ -10,10 +10,22 @@ public class WebtoonReaderModule: Module {
         view.updateData(data: data)
       }
 
-      Events("onEndReached", "onChapterChanged", "onSingleTap", "onPageChanged", "onScrollBegin")
-      
+      Events("onEndReached", "onChapterChanged", "onSingleTap", "onPageChanged", "onScrollBegin", "onLoadingStateChanged", "onImageError")
+
       AsyncFunction("scrollToIndex") { (view: WebtoonReaderView, chapterId: String, index: Int) in
         view.scrollToIndex(chapterId: chapterId, index: index)
+      }
+
+      AsyncFunction("getCurrentPosition") { (view: WebtoonReaderView) -> [String: Any] in
+        return view.getCurrentPosition()
+      }
+
+      AsyncFunction("setZoomScale") { (view: WebtoonReaderView, scale: Double) in
+        view.setZoomScale(scale: CGFloat(scale))
+      }
+
+      AsyncFunction("resetZoom") { (view: WebtoonReaderView) in
+        view.resetZoom()
       }
     }
   }

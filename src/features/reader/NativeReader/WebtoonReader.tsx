@@ -4,6 +4,8 @@ import { StyleSheet, View } from 'react-native';
 import {
     OnChapterChangedEventPayload,
     OnEndReachedEventPayload,
+    OnImageErrorEventPayload,
+    OnLoadingStateChangedEventPayload,
     OnPageChangedEventPayload,
     WebtoonPage,
     WebtoonReaderView
@@ -11,6 +13,9 @@ import {
 
 export type NativeWebtoonReaderRef = {
     seekTo: (chapterId: string, index: number) => Promise<boolean>;
+    getPosition: () => Promise<{ chapterId: string; pageIndex: number } | null>;
+    setZoom: (scale: number) => Promise<void>;
+    resetZoom: () => Promise<void>;
 };
 
 type NativeWebtoonReaderProps = {
@@ -20,6 +25,8 @@ type NativeWebtoonReaderProps = {
     onSingleTap?: () => void;
     onPageChanged?: (chapterId: string, pageIndex: number) => void;
     onScrollBegin?: () => void;
+    onLoadingStateChanged?: (pageId: string, isLoading: boolean) => void;
+    onImageError?: (pageId: string, error: string) => void;
 };
 
 export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
@@ -29,6 +36,8 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
     onSingleTap,
     onPageChanged,
     onScrollBegin,
+    onLoadingStateChanged,
+    onImageError,
 }, ref) => {
     const nativeViewRef = React.useRef<any>(null);
 
@@ -47,6 +56,50 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
             } catch (error) {
                 console.warn("[NativeWebtoonReader] seekTo failed", { chapterId, index, error });
                 return false;
+            }
+        },
+        getPosition: async () => {
+            const nativeView = nativeViewRef.current;
+            if (!nativeView?.getCurrentPosition) {
+                return null;
+            }
+
+            try {
+                const result = await nativeView.getCurrentPosition();
+                if (!result.chapterId) {
+                    return null;
+                }
+                return {
+                    chapterId: result.chapterId,
+                    pageIndex: result.pageIndex
+                };
+            } catch (error) {
+                console.warn("[NativeWebtoonReader] getPosition failed", { error });
+                return null;
+            }
+        },
+        setZoom: async (scale: number) => {
+            const nativeView = nativeViewRef.current;
+            if (!nativeView?.setZoomScale) {
+                return;
+            }
+
+            try {
+                await nativeView.setZoomScale(scale);
+            } catch (error) {
+                console.warn("[NativeWebtoonReader] setZoom failed", { scale, error });
+            }
+        },
+        resetZoom: async () => {
+            const nativeView = nativeViewRef.current;
+            if (!nativeView?.resetZoom) {
+                return;
+            }
+
+            try {
+                await nativeView.resetZoom();
+            } catch (error) {
+                console.warn("[NativeWebtoonReader] resetZoom failed", { error });
             }
         }
     }), []);
@@ -78,6 +131,20 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
         [onScrollBegin]
     );
 
+    const handleLoadingStateChanged = React.useCallback(
+        (event: { nativeEvent: OnLoadingStateChangedEventPayload }) => {
+            onLoadingStateChanged?.(event.nativeEvent.pageId, event.nativeEvent.isLoading);
+        },
+        [onLoadingStateChanged]
+    );
+
+    const handleImageError = React.useCallback(
+        (event: { nativeEvent: OnImageErrorEventPayload }) => {
+            onImageError?.(event.nativeEvent.pageId, event.nativeEvent.error);
+        },
+        [onImageError]
+    );
+
     return (
         <View style={styles.container}>
             <WebtoonReaderView
@@ -89,6 +156,8 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 onSingleTap={onSingleTap}
                 onPageChanged={handlePageChanged}
                 onScrollBegin={handleScrollBegin}
+                onLoadingStateChanged={handleLoadingStateChanged}
+                onImageError={handleImageError}
             />
         </View>
     );

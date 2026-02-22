@@ -6,6 +6,10 @@ class WebtoonPageCell: UICollectionViewCell {
   private var scrollView: UIScrollView!
   private var tiledImageView: TiledImageView!
   private var lastZoomInteractionAt: CFTimeInterval = 0
+  private var currentPageId: String?
+
+  var onLoadingStateChanged: ((_ pageId: String, _ isLoading: Bool) -> Void)?
+  var onImageError: ((_ pageId: String, _ error: String) -> Void)?
 
   var shouldSuppressReaderTap: Bool {
     if scrollView.isDragging || scrollView.isDecelerating || scrollView.isZooming {
@@ -33,6 +37,14 @@ class WebtoonPageCell: UICollectionViewCell {
     scrollView.isScrollEnabled = false
 
     tiledImageView = TiledImageView(frame: .zero)
+    tiledImageView.onLoadingStateChanged = { [weak self] isLoading in
+      guard let self = self, let pageId = self.currentPageId else { return }
+      self.onLoadingStateChanged?(pageId, isLoading)
+    }
+    tiledImageView.onImageError = { [weak self] error in
+      guard let self = self, let pageId = self.currentPageId else { return }
+      self.onImageError?(pageId, error)
+    }
     scrollView.addSubview(tiledImageView)
     contentView.addSubview(scrollView)
 
@@ -52,6 +64,7 @@ class WebtoonPageCell: UICollectionViewCell {
 
   override func prepareForReuse() {
     super.prepareForReuse()
+    currentPageId = nil
     scrollView.setZoomScale(1.0, animated: false)
     scrollView.isScrollEnabled = false
     tiledImageView.clear()
@@ -82,6 +95,8 @@ class WebtoonPageCell: UICollectionViewCell {
   }
 
   func configure(with page: WebtoonPage) {
+    currentPageId = page.id
+
     let safeAspectRatio = page.aspectRatio > 0 ? page.aspectRatio : 1.0
     let screenWidth = UIScreen.main.bounds.width
     let targetHeight = screenWidth / safeAspectRatio
@@ -108,6 +123,17 @@ class WebtoonPageCell: UICollectionViewCell {
     }
 
     tiledImageView.configure(withLocalPath: resolvedPath, exactSize: targetSize)
+  }
+
+  func setZoomScale(_ scale: CGFloat, animated: Bool) {
+    let clampedScale = max(scrollView.minimumZoomScale, min(scale, scrollView.maximumZoomScale))
+    scrollView.setZoomScale(clampedScale, animated: animated)
+    scrollView.isScrollEnabled = clampedScale > 1.0
+  }
+
+  func resetZoom(animated: Bool) {
+    scrollView.setZoomScale(1.0, animated: animated)
+    scrollView.isScrollEnabled = false
   }
 }
 

@@ -1,19 +1,21 @@
 import { registerWebModule, NativeModule } from 'expo';
 
-import { ChangeEventPayload } from './WebtoonReader.types';
+class WebtoonReaderModule extends NativeModule<Record<string, never>> {
+  async scrollToIndex(_viewRef: any, _chapterId: string, _index: number): Promise<void> {
+    return;
+  }
 
-type WebtoonReaderModuleEvents = {
-  onChange: (params: ChangeEventPayload) => void;
+  async getCurrentPosition(_viewRef: any): Promise<{ chapterId: string; pageIndex: number }> {
+    return { chapterId: '', pageIndex: -1 };
+  }
+
+  async setZoomScale(_viewRef: any, _scale: number): Promise<void> {
+    return;
+  }
+
+  async resetZoom(_viewRef: any): Promise<void> {
+    return;
+  }
 }
-
-class WebtoonReaderModule extends NativeModule<WebtoonReaderModuleEvents> {
-  PI = Math.PI;
-  async setValueAsync(value: string): Promise<void> {
-    this.emit('onChange', { value });
-  }
-  hello() {
-    return 'Hello world! 👋';
-  }
-};
 
 export default registerWebModule(WebtoonReaderModule, 'WebtoonReaderModule');
