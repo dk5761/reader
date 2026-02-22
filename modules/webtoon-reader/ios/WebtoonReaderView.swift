@@ -16,6 +16,8 @@ struct WebtoonPage: Hashable {
 }
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
+  private let preloadLeadPages = 4
+
   let onEndReached = EventDispatcher()
   let onChapterChanged = EventDispatcher()
   let onSingleTap = EventDispatcher()
@@ -340,8 +342,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return false
     }
 
-    // Trigger preload only when the user is actually near chapter end.
-    let triggerPageIndex = max(0, maxPageIndex - 1)
+    // Trigger preload when the user is within `preloadLeadPages` of the end.
+    // Example: 16 pages (0...15) with lead=4 -> trigger at index 11 (page 12).
+    let triggerPageIndex = max(0, maxPageIndex - preloadLeadPages)
     return pageIndex >= triggerPageIndex
   }
 
@@ -372,13 +375,10 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
-    for indexPath in indexPaths {
-      guard let page = dataSource.itemIdentifier(for: indexPath) else {
-        continue
-      }
-
-      emitEndReachedIfNeeded(chapterId: page.chapterId, pageIndex: page.pageIndex)
-    }
+    // Intentionally no-op.
+    // Prefetch callbacks are predictive and can include pages the user has not reached yet.
+    // Emitting `onEndReached` from here causes chapter preload updates to run early, which can
+    // mutate reader state while the user is still mid-chapter.
   }
 }
 
