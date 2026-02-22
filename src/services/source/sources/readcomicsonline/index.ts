@@ -1,0 +1,1 @@
+export { readComicsOnlineAdapter } from "./readComicsOnlineAdapter";

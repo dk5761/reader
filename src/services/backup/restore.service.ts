@@ -16,6 +16,36 @@ import {
 } from "@/services/db";
 import type { BackupData, BackupTables } from "./backup.types";
 
+const LEGACY_SOURCE_ID = "readcomiconline";
+const CURRENT_SOURCE_ID = "readcomicsonline";
+
+const normalizeSourceId = (sourceId: string): string =>
+  sourceId === LEGACY_SOURCE_ID ? CURRENT_SOURCE_ID : sourceId;
+
+const normalizeSourceIdListJson = (value: string): string => {
+  const raw = value.trim();
+  if (!raw) {
+    return value;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return value;
+  }
+
+  if (!Array.isArray(parsed)) {
+    return value;
+  }
+
+  const normalized = parsed
+    .map((entry) => (typeof entry === "string" ? normalizeSourceId(entry.trim()) : ""))
+    .filter(Boolean);
+
+  return JSON.stringify(Array.from(new Set(normalized)));
+};
+
 const restoreLibraryEntries = (entries: BackupTables["library_entries"]) => {
   if (entries.length === 0) {
     return;
@@ -27,18 +57,22 @@ const restoreLibraryEntries = (entries: BackupTables["library_entries"]) => {
   sqliteDb.withTransactionSync(() => {
     entries.forEach((entry) => {
       const { id, ...dataWithoutId } = entry;
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
       db.insert(libraryEntries)
-        .values(dataWithoutId)
+        .values(normalizedData)
         .onConflictDoUpdate({
           target: [libraryEntries.sourceId, libraryEntries.mangaId],
           set: {
-            mangaUrl: dataWithoutId.mangaUrl,
-            title: dataWithoutId.title,
-            thumbnailUrl: dataWithoutId.thumbnailUrl,
-            description: dataWithoutId.description,
-            status: dataWithoutId.status,
-            updatedAt: dataWithoutId.updatedAt,
-            lastReadAt: dataWithoutId.lastReadAt,
+            mangaUrl: normalizedData.mangaUrl,
+            title: normalizedData.title,
+            thumbnailUrl: normalizedData.thumbnailUrl,
+            description: normalizedData.description,
+            status: normalizedData.status,
+            updatedAt: normalizedData.updatedAt,
+            lastReadAt: normalizedData.lastReadAt,
           },
         })
         .run();
@@ -109,8 +143,12 @@ const restoreProgress = (progress: BackupTables["reading_progress"]) => {
   sqliteDb.withTransactionSync(() => {
     progress.forEach((p) => {
       const { id, ...dataWithoutId } = p;
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
       db.insert(readingProgress)
-        .values(dataWithoutId)
+        .values(normalizedData)
         .onConflictDoUpdate({
           target: [
             readingProgress.sourceId,
@@ -118,12 +156,12 @@ const restoreProgress = (progress: BackupTables["reading_progress"]) => {
             readingProgress.chapterId,
           ],
           set: {
-            chapterTitle: dataWithoutId.chapterTitle,
-            chapterNumber: dataWithoutId.chapterNumber,
-            pageIndex: dataWithoutId.pageIndex,
-            totalPages: dataWithoutId.totalPages,
-            isCompleted: dataWithoutId.isCompleted,
-            updatedAt: dataWithoutId.updatedAt,
+            chapterTitle: normalizedData.chapterTitle,
+            chapterNumber: normalizedData.chapterNumber,
+            pageIndex: normalizedData.pageIndex,
+            totalPages: normalizedData.totalPages,
+            isCompleted: normalizedData.isCompleted,
+            updatedAt: normalizedData.updatedAt,
           },
         })
         .run();
@@ -142,8 +180,12 @@ const restoreHistory = (history: BackupTables["reading_history"]) => {
   sqliteDb.withTransactionSync(() => {
     history.forEach((h) => {
       const { id, ...dataWithoutId } = h;
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
       db.insert(readingHistory)
-        .values(dataWithoutId)
+        .values(normalizedData)
         .onConflictDoUpdate({
           target: [
             readingHistory.sourceId,
@@ -151,13 +193,13 @@ const restoreHistory = (history: BackupTables["reading_history"]) => {
             readingHistory.chapterId,
           ],
           set: {
-            mangaTitle: dataWithoutId.mangaTitle,
-            mangaThumbnailUrl: dataWithoutId.mangaThumbnailUrl,
-            chapterTitle: dataWithoutId.chapterTitle,
-            chapterNumber: dataWithoutId.chapterNumber,
-            pageIndex: dataWithoutId.pageIndex,
-            totalPages: dataWithoutId.totalPages,
-            updatedAt: dataWithoutId.updatedAt,
+            mangaTitle: normalizedData.mangaTitle,
+            mangaThumbnailUrl: normalizedData.mangaThumbnailUrl,
+            chapterTitle: normalizedData.chapterTitle,
+            chapterNumber: normalizedData.chapterNumber,
+            pageIndex: normalizedData.pageIndex,
+            totalPages: normalizedData.totalPages,
+            updatedAt: normalizedData.updatedAt,
           },
         })
         .run();
@@ -178,7 +220,11 @@ const restoreHistoryEvents = (
   sqliteDb.withTransactionSync(() => {
     events.forEach((e) => {
       const { id, ...dataWithoutId } = e;
-      db.insert(readingHistoryEvents).values(dataWithoutId).run();
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
+      db.insert(readingHistoryEvents).values(normalizedData).run();
     });
   });
 };
@@ -217,12 +263,18 @@ const restoreGlobalSearchSettings = (
 
   settings.forEach((s) => {
     const { id, ...dataWithoutId } = s;
+    const normalizedSourceIdsJson = normalizeSourceIdListJson(
+      dataWithoutId.selectedSourceIdsJson
+    );
     db.insert(globalSearchSettings)
-      .values(dataWithoutId)
+      .values({
+        ...dataWithoutId,
+        selectedSourceIdsJson: normalizedSourceIdsJson,
+      })
       .onConflictDoUpdate({
         target: globalSearchSettings.id,
         set: {
-          selectedSourceIdsJson: dataWithoutId.selectedSourceIdsJson,
+          selectedSourceIdsJson: normalizedSourceIdsJson,
           updatedAt: dataWithoutId.updatedAt,
         },
       })
@@ -241,8 +293,14 @@ const restoreLibraryViewSettings = (
 
   settings.forEach((s) => {
     const { id, ...dataWithoutId } = s;
+    const normalizedSourceFilterJson = normalizeSourceIdListJson(
+      dataWithoutId.sourceFilterJson
+    );
     db.insert(libraryViewSettings)
-      .values(dataWithoutId)
+      .values({
+        ...dataWithoutId,
+        sourceFilterJson: normalizedSourceFilterJson,
+      })
       .onConflictDoUpdate({
         target: libraryViewSettings.id,
         set: {
@@ -250,7 +308,7 @@ const restoreLibraryViewSettings = (
           sortKey: dataWithoutId.sortKey,
           sortDirection: dataWithoutId.sortDirection,
           statusFilter: dataWithoutId.statusFilter,
-          sourceFilterJson: dataWithoutId.sourceFilterJson,
+          sourceFilterJson: normalizedSourceFilterJson,
           updatedAt: dataWithoutId.updatedAt,
         },
       })
@@ -271,20 +329,24 @@ const restoreLibraryUpdateState = (
   sqliteDb.withTransactionSync(() => {
     state.forEach((s) => {
       const { id, ...dataWithoutId } = s;
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
       db.insert(libraryUpdateState)
-        .values(dataWithoutId)
+        .values(normalizedData)
         .onConflictDoUpdate({
           target: [libraryUpdateState.sourceId, libraryUpdateState.mangaId],
           set: {
-            chapterCount: dataWithoutId.chapterCount,
-            latestChapterId: dataWithoutId.latestChapterId,
-            latestChapterTitle: dataWithoutId.latestChapterTitle,
-            latestChapterNumber: dataWithoutId.latestChapterNumber,
-            latestChapterUploadedAt: dataWithoutId.latestChapterUploadedAt,
-            latestChapterUploadedAtTs: dataWithoutId.latestChapterUploadedAtTs,
-            lastCheckedAt: dataWithoutId.lastCheckedAt,
-            lastUpdateDetectedAt: dataWithoutId.lastUpdateDetectedAt,
-            firstSyncedAt: dataWithoutId.firstSyncedAt,
+            chapterCount: normalizedData.chapterCount,
+            latestChapterId: normalizedData.latestChapterId,
+            latestChapterTitle: normalizedData.latestChapterTitle,
+            latestChapterNumber: normalizedData.latestChapterNumber,
+            latestChapterUploadedAt: normalizedData.latestChapterUploadedAt,
+            latestChapterUploadedAtTs: normalizedData.latestChapterUploadedAtTs,
+            lastCheckedAt: normalizedData.lastCheckedAt,
+            lastUpdateDetectedAt: normalizedData.lastUpdateDetectedAt,
+            firstSyncedAt: normalizedData.firstSyncedAt,
           },
         })
         .run();
@@ -305,7 +367,11 @@ const restoreLibraryUpdateEvents = (
   sqliteDb.withTransactionSync(() => {
     events.forEach((e) => {
       const { id, ...dataWithoutId } = e;
-      db.insert(libraryUpdateEvents).values(dataWithoutId).run();
+      const normalizedData = {
+        ...dataWithoutId,
+        sourceId: normalizeSourceId(dataWithoutId.sourceId),
+      };
+      db.insert(libraryUpdateEvents).values(normalizedData).run();
     });
   });
 };
