@@ -10,6 +10,7 @@ class WebtoonPageCell: UICollectionViewCell {
 
   var onLoadingStateChanged: ((_ pageId: String, _ isLoading: Bool) -> Void)?
   var onImageError: ((_ pageId: String, _ error: String) -> Void)?
+  var onRetryRequested: ((_ pageId: String) -> Void)?
 
   var shouldSuppressReaderTap: Bool {
     if scrollView.isDragging || scrollView.isDecelerating || scrollView.isZooming {
@@ -65,6 +66,7 @@ class WebtoonPageCell: UICollectionViewCell {
   override func prepareForReuse() {
     super.prepareForReuse()
     currentPageId = nil
+    onRetryRequested = nil
     scrollView.setZoomScale(1.0, animated: false)
     scrollView.isScrollEnabled = false
     tiledImageView.clear()
@@ -108,7 +110,17 @@ class WebtoonPageCell: UICollectionViewCell {
     guard !rawPath.isEmpty else {
       if page.loadState == "failed" {
         let message = page.errorMessage ?? "Failed to load page."
-        tiledImageView.showErrorPlaceholder(size: targetSize, message: message, allowRetry: false)
+        tiledImageView.showErrorPlaceholder(
+          size: targetSize,
+          message: message,
+          allowRetry: true,
+          onRetry: { [weak self] in
+            guard let self = self, let pageId = self.currentPageId else {
+              return
+            }
+            self.onRetryRequested?(pageId)
+          }
+        )
       } else {
         tiledImageView.showLoadingPlaceholder(size: targetSize)
       }

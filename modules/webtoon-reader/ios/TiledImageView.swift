@@ -226,6 +226,7 @@ class TiledImageView: UIView {
   private var currentPath: String?
   private var currentSize: CGSize?
   private var renderState: RenderState = .idle
+  private var placeholderRetryHandler: (() -> Void)?
 
   var onLoadingStateChanged: ((Bool) -> Void)?
   var onImageError: ((String) -> Void)?
@@ -414,6 +415,7 @@ class TiledImageView: UIView {
     imagePath = nil
     currentPath = nil
     currentSize = nil
+    placeholderRetryHandler = nil
     proxyImageView.image = nil
     proxyImageView.alpha = 0
     tiledLayerView.configure(source: nil, viewportSize: .zero)
@@ -424,6 +426,7 @@ class TiledImageView: UIView {
     imagePath = nil
     currentPath = nil
     currentSize = size
+    placeholderRetryHandler = nil
     frame = CGRect(origin: .zero, size: size)
     proxyImageView.frame = CGRect(origin: .zero, size: size)
     tiledLayerView.frame = CGRect(origin: .zero, size: size)
@@ -434,10 +437,16 @@ class TiledImageView: UIView {
     applyRenderState(.loading)
   }
 
-  func showErrorPlaceholder(size: CGSize, message: String, allowRetry: Bool = false) {
+  func showErrorPlaceholder(
+    size: CGSize,
+    message: String,
+    allowRetry: Bool = false,
+    onRetry: (() -> Void)? = nil
+  ) {
     imagePath = nil
     currentPath = nil
     currentSize = size
+    placeholderRetryHandler = allowRetry ? onRetry : nil
     frame = CGRect(origin: .zero, size: size)
     proxyImageView.frame = CGRect(origin: .zero, size: size)
     tiledLayerView.frame = CGRect(origin: .zero, size: size)
@@ -466,11 +475,16 @@ class TiledImageView: UIView {
   }
 
   @objc private func handleRetryTap() {
+    if currentPath == nil {
+      placeholderRetryHandler?()
+      return
+    }
     retryCurrentImageLoad()
   }
 
   private func loadImage(path: String, exactSize: CGSize) {
     imagePath = path
+    placeholderRetryHandler = nil
     frame = CGRect(origin: .zero, size: exactSize)
     proxyImageView.frame = CGRect(origin: .zero, size: exactSize)
     tiledLayerView.frame = CGRect(origin: .zero, size: exactSize)

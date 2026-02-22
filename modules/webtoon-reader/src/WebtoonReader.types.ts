@@ -37,6 +37,10 @@ export type OnImageErrorEventPayload = {
   error: string;
 };
 
+export type OnRetryRequestedEventPayload = {
+  pageId: string;
+};
+
 export type WebtoonReaderViewProps = {
   data: WebtoonPage[];
   onEndReached?: (event: { nativeEvent: OnEndReachedEventPayload }) => void;
@@ -46,6 +50,7 @@ export type WebtoonReaderViewProps = {
   onScrollBegin?: () => void;
   onLoadingStateChanged?: (event: { nativeEvent: OnLoadingStateChangedEventPayload }) => void;
   onImageError?: (event: { nativeEvent: OnImageErrorEventPayload }) => void;
+  onRetryRequested?: (event: { nativeEvent: OnRetryRequestedEventPayload }) => void;
   style?: StyleProp<ViewStyle>;
   ref?: React.Ref<any>;
 };

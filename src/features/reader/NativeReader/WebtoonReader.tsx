@@ -7,6 +7,7 @@ import {
     OnImageErrorEventPayload,
     OnLoadingStateChangedEventPayload,
     OnPageChangedEventPayload,
+    OnRetryRequestedEventPayload,
     WebtoonPage,
     WebtoonReaderView
 } from '../../../../modules/webtoon-reader';
@@ -27,6 +28,7 @@ type NativeWebtoonReaderProps = {
     onScrollBegin?: () => void;
     onLoadingStateChanged?: (pageId: string, isLoading: boolean) => void;
     onImageError?: (pageId: string, error: string) => void;
+    onRetryRequested?: (pageId: string) => void;
 };
 
 export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
@@ -38,6 +40,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
     onScrollBegin,
     onLoadingStateChanged,
     onImageError,
+    onRetryRequested,
 }, ref) => {
     const nativeViewRef = React.useRef<any>(null);
 
@@ -145,6 +148,13 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
         [onImageError]
     );
 
+    const handleRetryRequested = React.useCallback(
+        (event: { nativeEvent: OnRetryRequestedEventPayload }) => {
+            onRetryRequested?.(event.nativeEvent.pageId);
+        },
+        [onRetryRequested]
+    );
+
     return (
         <View style={styles.container}>
             <WebtoonReaderView
@@ -158,6 +168,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 onScrollBegin={handleScrollBegin}
                 onLoadingStateChanged={handleLoadingStateChanged}
                 onImageError={handleImageError}
+                onRetryRequested={handleRetryRequested}
             />
         </View>
     );

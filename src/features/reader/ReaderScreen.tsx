@@ -7,7 +7,7 @@ import { getSourceChapterPages } from "@/services/source/core/runtime";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
 import { getDecodedParam } from "@/shared/utils";
 import { useReaderProgressSync } from "./hooks/useReaderProgressSync";
 import { ReaderBottomOverlay } from "./components/ReaderBottomOverlay";
@@ -23,11 +23,6 @@ type FailedPage = {
   terminal: boolean;
   lastAttemptAt: number;
   nextRetryAt?: number;
-};
-
-type FailureBanner = {
-  pageId: string;
-  message: string;
 };
 
 const MAX_AUTO_RETRIES = 2;
@@ -88,11 +83,9 @@ export default function ReaderScreen() {
   // Background Cache State
   const [downloadedPages, setDownloadedPages] = useState<Record<string, DownloadedPage>>({});
   const [failedPages, setFailedPages] = useState<Record<string, FailedPage>>({});
-  const [failureBanner, setFailureBanner] = useState<FailureBanner | null>(null);
   const inFlightPagesRef = useRef<Set<string>>(new Set());
   const failedPagesRef = useRef<Record<string, FailedPage>>({});
   const retryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const notifiedFailureKeysRef = useRef<Set<string>>(new Set());
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -260,7 +253,6 @@ export default function ReaderScreen() {
     retryTimersRef.current.clear();
     inFlightPagesRef.current.clear();
     failedPagesRef.current = {};
-    notifiedFailureKeysRef.current.clear();
     chapterSwitchTargetRef.current = null;
     setChapterSwitchTargetId(null);
     setEntryChapterId(initialChapterId);
@@ -280,7 +272,6 @@ export default function ReaderScreen() {
     hasAppliedPersistedInitialPageRef.current = false;
     setDownloadedPages({});
     setFailedPages({});
-    setFailureBanner(null);
     reset();
   }, [
     hasExplicitInitialPageParam,
@@ -359,12 +350,6 @@ export default function ReaderScreen() {
       delete next[pageId];
       return next;
     });
-    notifiedFailureKeysRef.current.forEach((key) => {
-      if (key.startsWith(`${pageId}:`)) {
-        notifiedFailureKeysRef.current.delete(key);
-      }
-    });
-    setFailureBanner((current) => (current?.pageId === pageId ? null : current));
   }, []);
 
   const applyDownloadFailure = useCallback((pageId: string, error: unknown) => {
@@ -424,17 +409,6 @@ export default function ReaderScreen() {
       return;
     }
 
-    const notificationKey = `${pageId}:${normalized.statusCode ?? "na"}:${normalized.message}`;
-    if (!notifiedFailureKeysRef.current.has(notificationKey)) {
-      notifiedFailureKeysRef.current.add(notificationKey);
-      setFailureBanner({
-        pageId,
-        message:
-          normalized.statusCode !== undefined
-            ? `Page failed (${normalized.statusCode}).`
-            : "Page failed to load.",
-      });
-    }
   }, []);
 
   // Background Downloader Hook with deterministic failure handling.
@@ -723,17 +697,6 @@ export default function ReaderScreen() {
     if (!failure?.terminal) {
       return;
     }
-
-    const notificationKey = `${pageId}:native:${error}`;
-    if (notifiedFailureKeysRef.current.has(notificationKey)) {
-      return;
-    }
-
-    notifiedFailureKeysRef.current.add(notificationKey);
-    setFailureBanner({
-      pageId,
-      message: "Page failed to render.",
-    });
   }, []);
 
   const handleSeek = useCallback((pageIndex: number) => {
@@ -852,6 +815,7 @@ export default function ReaderScreen() {
         onPageChanged={handlePageChanged}
         onScrollBegin={hideOverlay}
         onImageError={handleImageError}
+        onRetryRequested={retryPage}
       />
 
       {/* Floating Overlays */}
@@ -898,30 +862,6 @@ export default function ReaderScreen() {
           <ReaderLoadingScreen chapterTitle={chapterSwitchTitle} />
         </View>
       )}
-
-      {failureBanner && (
-        <View style={styles.failureBannerContainer} pointerEvents="box-none">
-          <View style={styles.failureBanner}>
-            <Text style={styles.failureBannerText}>
-              {failureBanner.message} Tap retry.
-            </Text>
-            <View style={styles.failureActions}>
-              <TouchableOpacity
-                onPress={() => retryPage(failureBanner.pageId)}
-                style={styles.retryButton}
-              >
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => setFailureBanner(null)}
-                style={styles.dismissButton}
-              >
-                <Text style={styles.dismissButtonText}>Dismiss</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -948,52 +888,5 @@ const styles = StyleSheet.create({
   chapterSwitchLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
-  },
-  failureBannerContainer: {
-    position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 86,
-    zIndex: 40,
-  },
-  failureBanner: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(239,68,68,0.45)",
-    backgroundColor: "rgba(35,16,16,0.96)",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  failureBannerText: {
-    color: "#FCA5A5",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  failureActions: {
-    marginTop: 8,
-    flexDirection: "row",
-    gap: 8,
-  },
-  retryButton: {
-    borderRadius: 999,
-    backgroundColor: "#7F1D1D",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  retryButtonText: {
-    color: "#FDE2E2",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  dismissButton: {
-    borderRadius: 999,
-    backgroundColor: "#2A2A2E",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  dismissButtonText: {
-    color: "#D4D4D8",
-    fontSize: 12,
-    fontWeight: "600",
   },
 });

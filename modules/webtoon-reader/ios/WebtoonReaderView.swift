@@ -23,6 +23,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   let onScrollBegin = EventDispatcher()
   let onLoadingStateChanged = EventDispatcher()
   let onImageError = EventDispatcher()
+  let onRetryRequested = EventDispatcher()
 
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
@@ -116,6 +117,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       }
       cell.onImageError = { [weak self] pageId, error in
         self?.onImageError(["pageId": pageId, "error": error])
+      }
+      cell.onRetryRequested = { [weak self] pageId in
+        self?.onRetryRequested(["pageId": pageId])
       }
       return cell
     }
