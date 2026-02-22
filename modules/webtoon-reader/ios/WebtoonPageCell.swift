@@ -106,7 +106,12 @@ class WebtoonPageCell: UICollectionViewCell {
 
     let rawPath = page.localPath
     guard !rawPath.isEmpty else {
-      tiledImageView.showLoadingPlaceholder(size: targetSize)
+      if page.loadState == "failed" {
+        let message = page.errorMessage ?? "Failed to load page."
+        tiledImageView.showErrorPlaceholder(size: targetSize, message: message, allowRetry: false)
+      } else {
+        tiledImageView.showLoadingPlaceholder(size: targetSize)
+      }
       return
     }
 

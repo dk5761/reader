@@ -515,7 +515,13 @@ export default function ReaderScreen() {
           if (cancelled) {
             continue;
           }
-          console.error(`Failed to download page ${task.pageId}`, error);
+          const isExpectedTerminal =
+            error instanceof DownloadError && !error.retriable;
+          if (isExpectedTerminal) {
+            console.warn(`Failed to download page ${task.pageId}`, error);
+          } else {
+            console.error(`Failed to download page ${task.pageId}`, error);
+          }
           applyDownloadFailure(task.pageId, error);
         } finally {
           inFlightPagesRef.current.delete(task.pageId);
@@ -562,6 +568,8 @@ export default function ReaderScreen() {
         merged = merged.concat(query.data.map((p, index) => {
           const pageId = `${cId}-${index}`;
           const downloaded = downloadedPages[pageId];
+          const failed = failedPages[pageId];
+          const isTerminalFailure = Boolean(failed?.terminal);
 
           return {
             id: pageId,
@@ -569,6 +577,10 @@ export default function ReaderScreen() {
             pageIndex: index,
             chapterId: cId,
             aspectRatio: downloaded ? (downloaded.width / downloaded.height) : ((p.width && p.height) ? p.width / p.height : 1),
+            loadState: downloaded ? "ready" : (isTerminalFailure ? "failed" : "loading"),
+            errorMessage: isTerminalFailure
+              ? (failed?.statusCode ? `Failed to load page (${failed.statusCode}).` : "Failed to load page.")
+              : undefined,
             isTransition: false,
             headers: p.headers,
           };
@@ -576,7 +588,7 @@ export default function ReaderScreen() {
       }
     }
     return merged;
-  }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data, downloadedPages]);
+  }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data, downloadedPages, failedPages]);
 
   useEffect(() => {
     if (!pendingSeek) return;

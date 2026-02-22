@@ -6,6 +6,8 @@ export type WebtoonPage = {
   pageIndex: number;   // Relative page index in chapter. Use -1 for transition cells.
   chapterId: string;   // ID/Title of the chapter this page belongs to
   aspectRatio: number; // width / height 
+  loadState?: "loading" | "ready" | "failed"; // Optional explicit page render state for native placeholders.
+  errorMessage?: string; // Optional message for failed placeholder rendering.
   isTransition?: boolean; // If true, instructs native view to render the interstitial transition cell
   previousChapterTitle?: string; // Top row displayed in Transition cell
   nextChapterTitle?: string; // Bottom row displayed in Transition cell

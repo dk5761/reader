@@ -434,6 +434,22 @@ class TiledImageView: UIView {
     applyRenderState(.loading)
   }
 
+  func showErrorPlaceholder(size: CGSize, message: String, allowRetry: Bool = false) {
+    imagePath = nil
+    currentPath = nil
+    currentSize = size
+    frame = CGRect(origin: .zero, size: size)
+    proxyImageView.frame = CGRect(origin: .zero, size: size)
+    tiledLayerView.frame = CGRect(origin: .zero, size: size)
+    loadingOverlayView.frame = CGRect(origin: .zero, size: size)
+    errorOverlayView.frame = CGRect(origin: .zero, size: size)
+    proxyImageView.image = nil
+    proxyImageView.alpha = 0
+    tiledLayerView.configure(source: nil, viewportSize: size)
+    retryButton.isHidden = !allowRetry
+    applyRenderState(.error(message: message))
+  }
+
   func configure(withLocalPath path: String, exactSize: CGSize) {
     currentPath = path
     currentSize = exactSize
@@ -515,18 +531,21 @@ class TiledImageView: UIView {
 
     switch state {
     case .idle:
+      retryButton.isHidden = false
       activityIndicator.stopAnimating()
       loadingOverlayView.isHidden = true
       errorOverlayView.isHidden = true
       errorMessageLabel.text = "Tap retry to try again."
       setLoading(false)
     case .loading:
+      retryButton.isHidden = false
       loadingOverlayView.isHidden = false
       bringSubviewToFront(loadingOverlayView)
       errorOverlayView.isHidden = true
       activityIndicator.startAnimating()
       setLoading(true)
     case .ready:
+      retryButton.isHidden = false
       activityIndicator.stopAnimating()
       loadingOverlayView.isHidden = true
       errorOverlayView.isHidden = true

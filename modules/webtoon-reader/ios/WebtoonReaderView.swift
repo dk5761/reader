@@ -7,6 +7,8 @@ struct WebtoonPage: Hashable {
   let pageIndex: Int
   let chapterId: String
   let aspectRatio: CGFloat
+  let loadState: String?
+  let errorMessage: String?
   let isTransition: Bool
   let previousChapterTitle: String?
   let nextChapterTitle: String?
@@ -140,6 +142,8 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       let localPath = (dict["localPath"] as? String) ?? (dict["localUri"] as? String) ?? ""
       let pageIndex = dict["pageIndex"] as? Int ?? -1
       let aspectRatio = dict["aspectRatio"] as? CGFloat ?? 1.0
+      let loadState = dict["loadState"] as? String
+      let errorMessage = dict["errorMessage"] as? String
       let isTransition = dict["isTransition"] as? Bool ?? false
       let prevTitle = dict["previousChapterTitle"] as? String
       let nextTitle = dict["nextChapterTitle"] as? String
@@ -151,6 +155,8 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
         pageIndex: pageIndex,
         chapterId: chapterId,
         aspectRatio: aspectRatio,
+        loadState: loadState,
+        errorMessage: errorMessage,
         isTransition: isTransition,
         previousChapterTitle: prevTitle,
         nextChapterTitle: nextTitle,
