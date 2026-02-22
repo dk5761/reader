@@ -7,13 +7,32 @@ import { getSourceChapterPages } from "@/services/source/core/runtime";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { Animated, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { getDecodedParam } from "@/shared/utils";
 import { useReaderProgressSync } from "./hooks/useReaderProgressSync";
 import { ReaderBottomOverlay } from "./components/ReaderBottomOverlay";
 import { ReaderLoadingScreen } from "./components/ReaderLoadingScreen";
 import { ReaderTopOverlay } from "./components/ReaderTopOverlay";
 import { NativeWebtoonReader, type NativeWebtoonReaderRef } from "./NativeReader/WebtoonReader";
-import { DownloadedPage, imageDownloadManager } from "./utils/ImageDownloadManager";
+import { DownloadError, DownloadedPage, imageDownloadManager } from "./utils/ImageDownloadManager";
+
+type FailedPage = {
+  attempts: number;
+  lastError: string;
+  statusCode?: number;
+  terminal: boolean;
+  lastAttemptAt: number;
+  nextRetryAt?: number;
+};
+
+type FailureBanner = {
+  pageId: string;
+  message: string;
+};
+
+const MAX_AUTO_RETRIES = 2;
+const AUTO_RETRY_BACKOFF_MS = [750, 2000];
+const DOWNLOAD_CONCURRENCY = 3;
 
 export default function ReaderScreen() {
   const params = useLocalSearchParams<{
@@ -23,15 +42,9 @@ export default function ReaderScreen() {
     initialPage?: string | string[];
   }>();
 
-  const sourceId = Array.isArray(params.sourceId)
-    ? params.sourceId[0]
-    : params.sourceId || "";
-  const mangaId = Array.isArray(params.mangaId)
-    ? params.mangaId[0]
-    : params.mangaId || "";
-  const initialChapterId = Array.isArray(params.chapterId)
-    ? params.chapterId[0]
-    : params.chapterId || "";
+  const sourceId = getDecodedParam(params.sourceId);
+  const mangaId = getDecodedParam(params.mangaId);
+  const initialChapterId = getDecodedParam(params.chapterId);
   const hasExplicitInitialPageParam =
     params.initialPage !== undefined && params.initialPage !== null;
   const initialPageRaw = Array.isArray(params.initialPage)
@@ -43,7 +56,8 @@ export default function ReaderScreen() {
       ? parsedInitialPage
       : 0;
 
-  const { setChapter, setCurrentPage, chapter } = useReaderStore();
+  const { setChapter, setCurrentPage, chapter, reset } = useReaderStore();
+  const [entryChapterId, setEntryChapterId] = useState(initialChapterId);
 
   const [activeChapterIds, setActiveChapterIds] = useState<string[]>([initialChapterId]);
 
@@ -73,6 +87,12 @@ export default function ReaderScreen() {
 
   // Background Cache State
   const [downloadedPages, setDownloadedPages] = useState<Record<string, DownloadedPage>>({});
+  const [failedPages, setFailedPages] = useState<Record<string, FailedPage>>({});
+  const [failureBanner, setFailureBanner] = useState<FailureBanner | null>(null);
+  const inFlightPagesRef = useRef<Set<string>>(new Set());
+  const failedPagesRef = useRef<Record<string, FailedPage>>({});
+  const retryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const notifiedFailureKeysRef = useRef<Set<string>>(new Set());
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -91,22 +111,25 @@ export default function ReaderScreen() {
     chapterProgressQueryOptions(
       sourceId,
       mangaId,
-      initialChapterId,
-      Boolean(sourceId && mangaId && initialChapterId && !hasExplicitInitialPageParam)
+      entryChapterId,
+      Boolean(sourceId && mangaId && entryChapterId && !hasExplicitInitialPageParam)
     )
   );
 
   // Dynamically fetch pages for all active chapters
+  const chapterPagesStaleTime =
+    sourceId === "readcomiconline" ? 0 : Infinity;
   const chapterPagesQueries = useQueries({
     queries: activeChapterIds.map((id) => ({
       queryKey: sourceQueryFactory.chapterPages(sourceId, id),
       queryFn: ({ signal }) => getSourceChapterPages(sourceId, id, signal),
-      staleTime: Infinity,
+      staleTime: chapterPagesStaleTime,
+      refetchOnMount: sourceId === "readcomiconline" ? "always" : true,
       enabled: Boolean(sourceId && id),
     })),
   });
 
-  const initialChapterQueryIndex = activeChapterIds.indexOf(initialChapterId);
+  const initialChapterQueryIndex = activeChapterIds.indexOf(entryChapterId);
   const primaryQuery =
     initialChapterQueryIndex >= 0
       ? chapterPagesQueries[initialChapterQueryIndex]
@@ -124,6 +147,34 @@ export default function ReaderScreen() {
     [chaptersQuery.data]
   );
 
+  useEffect(() => {
+    if (!chaptersQuery.data || chaptersQuery.data.length === 0) {
+      return;
+    }
+
+    if (chapterMetaById.has(entryChapterId)) {
+      return;
+    }
+
+    const fallbackChapterId = chaptersQuery.data[0]?.id;
+    if (!fallbackChapterId) {
+      return;
+    }
+
+    setEntryChapterId(fallbackChapterId);
+    setActiveChapterIds([fallbackChapterId]);
+    setCurrentOverlayChapterId(fallbackChapterId);
+    setCurrentOverlayPageIndex(0);
+    setCurrentProgressCursor({
+      chapterId: fallbackChapterId,
+      pageIndex: 0,
+    });
+    setPendingSeek({
+      chapterId: fallbackChapterId,
+      pageIndex: 0,
+    });
+  }, [chapterMetaById, chaptersQuery.data, entryChapterId]);
+
   const chapterPageCountById = useMemo(() => {
     const counts = new Map<string, number>();
     activeChapterIds.forEach((chapterId, index) => {
@@ -135,6 +186,28 @@ export default function ReaderScreen() {
     return counts;
   }, [activeChapterIds, chapterPagesQueries]);
 
+  const pageTaskById = useMemo(() => {
+    const tasks = new Map<
+      string,
+      { chapterId: string; imageUrl: string; headers?: Record<string, string> }
+    >();
+    activeChapterIds.forEach((chapterId, queryIndex) => {
+      const pages = chapterPagesQueries[queryIndex]?.data;
+      if (!pages) {
+        return;
+      }
+      pages.forEach((page, pageIndex) => {
+        const pageId = `${chapterId}-${pageIndex}`;
+        tasks.set(pageId, {
+          chapterId,
+          imageUrl: page.imageUrl,
+          headers: page.headers,
+        });
+      });
+    });
+    return tasks;
+  }, [activeChapterIds, chapterPagesQueries]);
+
   const isChapterSwitching = Boolean(chapterSwitchTargetId);
   const chapterSwitchMeta = chaptersQuery.data?.find((c) => c.id === chapterSwitchTargetId);
   const chapterSwitchTitle = chapterSwitchMeta?.title ||
@@ -143,10 +216,10 @@ export default function ReaderScreen() {
   // Keep the store "chapter" updated for the primary initial chapter
   // (Progress tracking might need to be explicitly managed onChapterChanged later)
   useEffect(() => {
-    if (primaryChapterPages && initialChapterId) {
+    if (primaryChapterPages && entryChapterId) {
       const pages: ReaderPage[] = primaryChapterPages.map((page, index) => ({
         index,
-        pageId: `${initialChapterId}-${index}`,
+        pageId: `${entryChapterId}-${index}`,
         imageUrl: page.imageUrl,
         headers: page.headers,
         width: page.width,
@@ -156,7 +229,7 @@ export default function ReaderScreen() {
 
       const firstPage = primaryChapterPages[0];
       const readerChapter: ReaderChapter = {
-        id: initialChapterId,
+        id: entryChapterId,
         sourceId,
         mangaId,
         title: firstPage?.chapterTitle,
@@ -174,7 +247,7 @@ export default function ReaderScreen() {
   }, [
     hasExplicitInitialPageParam,
     primaryChapterPages,
-    initialChapterId,
+    entryChapterId,
     sourceId,
     mangaId,
     initialPage,
@@ -184,7 +257,57 @@ export default function ReaderScreen() {
 
   const hasAppliedPersistedInitialPageRef = useRef(false);
   useEffect(() => {
-    if (hasExplicitInitialPageParam || !initialChapterId) {
+    retryTimersRef.current.forEach((timer) => clearTimeout(timer));
+    retryTimersRef.current.clear();
+    inFlightPagesRef.current.clear();
+    failedPagesRef.current = {};
+    notifiedFailureKeysRef.current.clear();
+    chapterSwitchTargetRef.current = null;
+    setChapterSwitchTargetId(null);
+    setEntryChapterId(initialChapterId);
+    setActiveChapterIds(initialChapterId ? [initialChapterId] : []);
+    setCurrentOverlayChapterId(initialChapterId);
+    setCurrentOverlayPageIndex(initialPage > 0 ? initialPage : 0);
+    setCurrentProgressCursor({
+      chapterId: initialChapterId,
+      pageIndex: initialPage > 0 ? initialPage : 0,
+    });
+    setPendingSeek(
+      initialPage > 0 && initialChapterId
+        ? { chapterId: initialChapterId, pageIndex: initialPage }
+        : null
+    );
+    setHasResolvedInitialProgress(hasExplicitInitialPageParam);
+    hasAppliedPersistedInitialPageRef.current = false;
+    setDownloadedPages({});
+    setFailedPages({});
+    setFailureBanner(null);
+    reset();
+  }, [
+    hasExplicitInitialPageParam,
+    initialChapterId,
+    initialPage,
+    mangaId,
+    reset,
+    sourceId,
+  ]);
+
+  useEffect(() => {
+    failedPagesRef.current = failedPages;
+  }, [failedPages]);
+
+  useEffect(() => {
+    const retryTimers = retryTimersRef.current;
+    const inFlightPages = inFlightPagesRef.current;
+    return () => {
+      retryTimers.forEach((timer) => clearTimeout(timer));
+      retryTimers.clear();
+      inFlightPages.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasExplicitInitialPageParam || !entryChapterId) {
       return;
     }
 
@@ -204,49 +327,208 @@ export default function ReaderScreen() {
       return;
     }
 
-    setCurrentOverlayChapterId(initialChapterId);
+    setCurrentOverlayChapterId(entryChapterId);
     setCurrentOverlayPageIndex(persistedPageIndex);
     setCurrentProgressCursor({
-      chapterId: initialChapterId,
+      chapterId: entryChapterId,
       pageIndex: persistedPageIndex,
     });
     setCurrentPage(persistedPageIndex);
     setPendingSeek({
-      chapterId: initialChapterId,
+      chapterId: entryChapterId,
       pageIndex: persistedPageIndex,
     });
   }, [
     hasExplicitInitialPageParam,
-    initialChapterId,
+    entryChapterId,
     initialChapterProgressQuery.data?.pageIndex,
     initialChapterProgressQuery.isPending,
     setCurrentPage,
   ]);
 
-  // Background Downloader Hook
-  // Watches all active chapter pages data, and eagerly downloads them to disk.
-  useEffect(() => {
-    chapterPagesQueries.forEach((query, i) => {
-      const cId = activeChapterIds[i];
-      if (query.data) {
-        // Preload next 10 items or entire chapter
-        query.data.forEach(async (p, index) => {
-          const cacheKey = `${cId}-${index}`;
-          if (!downloadedPages[cacheKey]) {
-            try {
-              const result = await imageDownloadManager.downloadPage(cId, p.imageUrl, p.headers);
-              setDownloadedPages(prev => ({
-                ...prev,
-                [cacheKey]: result
-              }));
-            } catch (e) {
-              console.error(`Failed to download page ${cacheKey}`, e);
-            }
-          }
-        });
+  const retryPage = useCallback((pageId: string) => {
+    const timer = retryTimersRef.current.get(pageId);
+    if (timer) {
+      clearTimeout(timer);
+      retryTimersRef.current.delete(pageId);
+    }
+    setFailedPages((prev) => {
+      if (!prev[pageId]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[pageId];
+      return next;
+    });
+    notifiedFailureKeysRef.current.forEach((key) => {
+      if (key.startsWith(`${pageId}:`)) {
+        notifiedFailureKeysRef.current.delete(key);
       }
     });
-  }, [chapterPagesQueries, activeChapterIds, downloadedPages]);
+    setFailureBanner((current) => (current?.pageId === pageId ? null : current));
+  }, []);
+
+  const applyDownloadFailure = useCallback((pageId: string, error: unknown) => {
+    const now = Date.now();
+    const normalized = error instanceof DownloadError
+      ? error
+      : new DownloadError(
+          error instanceof Error ? error.message : String(error ?? "Failed to download page"),
+          { retriable: true, code: "unknown", cause: error },
+        );
+
+    const previous = failedPagesRef.current[pageId];
+    const attempts = (previous?.attempts ?? 0) + 1;
+    const retryIndex = attempts - 1;
+    const shouldRetryAutomatically = normalized.retriable && retryIndex <= MAX_AUTO_RETRIES - 1;
+    const retryDelay =
+      shouldRetryAutomatically
+        ? AUTO_RETRY_BACKOFF_MS[Math.min(retryIndex, AUTO_RETRY_BACKOFF_MS.length - 1)]
+        : undefined;
+
+    const nextFailure: FailedPage = {
+      attempts,
+      lastError: normalized.message,
+      statusCode: normalized.statusCode,
+      terminal: !shouldRetryAutomatically,
+      lastAttemptAt: now,
+      nextRetryAt: retryDelay ? now + retryDelay : undefined,
+    };
+
+    setFailedPages((prev) => ({
+      ...prev,
+      [pageId]: nextFailure,
+    }));
+
+    if (retryDelay) {
+      const existing = retryTimersRef.current.get(pageId);
+      if (existing) {
+        clearTimeout(existing);
+      }
+      const timer = setTimeout(() => {
+        retryTimersRef.current.delete(pageId);
+        setFailedPages((current) => {
+          const failure = current[pageId];
+          if (!failure || failure.terminal) {
+            return current;
+          }
+          return {
+            ...current,
+            [pageId]: {
+              ...failure,
+              nextRetryAt: undefined,
+            },
+          };
+        });
+      }, retryDelay);
+      retryTimersRef.current.set(pageId, timer);
+      return;
+    }
+
+    const notificationKey = `${pageId}:${normalized.statusCode ?? "na"}:${normalized.message}`;
+    if (!notifiedFailureKeysRef.current.has(notificationKey)) {
+      notifiedFailureKeysRef.current.add(notificationKey);
+      setFailureBanner({
+        pageId,
+        message:
+          normalized.statusCode !== undefined
+            ? `Page failed (${normalized.statusCode}).`
+            : "Page failed to load.",
+      });
+    }
+  }, []);
+
+  // Background Downloader Hook with deterministic failure handling.
+  useEffect(() => {
+    const now = Date.now();
+    const queue: {
+      pageId: string;
+      chapterId: string;
+      imageUrl: string;
+      headers?: Record<string, string>;
+    }[] = [];
+
+    pageTaskById.forEach((task, pageId) => {
+      if (downloadedPages[pageId]) {
+        return;
+      }
+
+      const failed = failedPages[pageId];
+      if (failed?.terminal) {
+        return;
+      }
+      if (failed?.nextRetryAt && failed.nextRetryAt > now) {
+        return;
+      }
+      if (inFlightPagesRef.current.has(pageId)) {
+        return;
+      }
+
+      queue.push({
+        pageId,
+        chapterId: task.chapterId,
+        imageUrl: task.imageUrl,
+        headers: task.headers,
+      });
+    });
+
+    if (queue.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    let cursor = 0;
+    const workers = Math.min(DOWNLOAD_CONCURRENCY, queue.length);
+
+    const worker = async () => {
+      while (!cancelled) {
+        const task = queue[cursor];
+        cursor += 1;
+        if (!task) {
+          break;
+        }
+
+        inFlightPagesRef.current.add(task.pageId);
+        try {
+          const result = await imageDownloadManager.downloadPage(
+            task.chapterId,
+            task.imageUrl,
+            task.headers,
+          );
+          if (cancelled) {
+            continue;
+          }
+
+          setDownloadedPages((prev) => ({
+            ...prev,
+            [task.pageId]: result,
+          }));
+          setFailedPages((prev) => {
+            if (!prev[task.pageId]) {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[task.pageId];
+            return next;
+          });
+        } catch (error) {
+          if (cancelled) {
+            continue;
+          }
+          console.error(`Failed to download page ${task.pageId}`, error);
+          applyDownloadFailure(task.pageId, error);
+        } finally {
+          inFlightPagesRef.current.delete(task.pageId);
+        }
+      }
+    };
+
+    void Promise.all(Array.from({ length: workers }, () => worker()));
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applyDownloadFailure, downloadedPages, failedPages, pageTaskById]);
 
   // Combine all loaded pages seamlessly
   const combinedData = useMemo(() => {
@@ -425,6 +707,24 @@ export default function ReaderScreen() {
     setCurrentOverlayChapterId(chapterId);
   }, []);
 
+  const handleImageError = useCallback((pageId: string, error: string) => {
+    const failure = failedPagesRef.current[pageId];
+    if (!failure?.terminal) {
+      return;
+    }
+
+    const notificationKey = `${pageId}:native:${error}`;
+    if (notifiedFailureKeysRef.current.has(notificationKey)) {
+      return;
+    }
+
+    notifiedFailureKeysRef.current.add(notificationKey);
+    setFailureBanner({
+      pageId,
+      message: "Page failed to render.",
+    });
+  }, []);
+
   const handleSeek = useCallback((pageIndex: number) => {
     if (chapterSwitchTargetRef.current) {
       return;
@@ -540,6 +840,7 @@ export default function ReaderScreen() {
         onSingleTap={toggleOverlay}
         onPageChanged={handlePageChanged}
         onScrollBegin={hideOverlay}
+        onImageError={handleImageError}
       />
 
       {/* Floating Overlays */}
@@ -586,6 +887,30 @@ export default function ReaderScreen() {
           <ReaderLoadingScreen chapterTitle={chapterSwitchTitle} />
         </View>
       )}
+
+      {failureBanner && (
+        <View style={styles.failureBannerContainer} pointerEvents="box-none">
+          <View style={styles.failureBanner}>
+            <Text style={styles.failureBannerText}>
+              {failureBanner.message} Tap retry.
+            </Text>
+            <View style={styles.failureActions}>
+              <TouchableOpacity
+                onPress={() => retryPage(failureBanner.pageId)}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => setFailureBanner(null)}
+                style={styles.dismissButton}
+              >
+                <Text style={styles.dismissButtonText}>Dismiss</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -612,5 +937,52 @@ const styles = StyleSheet.create({
   chapterSwitchLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
+  },
+  failureBannerContainer: {
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 86,
+    zIndex: 40,
+  },
+  failureBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.45)",
+    backgroundColor: "rgba(35,16,16,0.96)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  failureBannerText: {
+    color: "#FCA5A5",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  failureActions: {
+    marginTop: 8,
+    flexDirection: "row",
+    gap: 8,
+  },
+  retryButton: {
+    borderRadius: 999,
+    backgroundColor: "#7F1D1D",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  retryButtonText: {
+    color: "#FDE2E2",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  dismissButton: {
+    borderRadius: 999,
+    backgroundColor: "#2A2A2E",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  dismissButtonText: {
+    color: "#D4D4D8",
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

@@ -597,20 +597,18 @@ export default function MangaDetailsScreen() {
                 }
               }}
             >
-              <View className="w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">
-                <View>
-                  {details.thumbnailUrl ? (
-                    <Image
-                      source={{ uri: details.thumbnailUrl }}
-                      contentFit="cover"
-                      style={{ width: "100%", height: 170 }}
-                    />
-                  ) : (
-                    <View className="h-full items-center justify-center">
-                      <Text className="text-xs text-[#6D6E78]">No cover</Text>
-                    </View>
-                  )}
-                </View>
+              <View className="h-[170px] w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">
+                {details.thumbnailUrl ? (
+                  <Image
+                    source={{ uri: details.thumbnailUrl }}
+                    contentFit="cover"
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                ) : (
+                  <View className="h-full items-center justify-center">
+                    <Text className="text-xs text-[#6D6E78]">No cover</Text>
+                  </View>
+                )}
               </View>
 
               <View className="flex-1">

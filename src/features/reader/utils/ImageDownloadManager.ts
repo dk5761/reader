@@ -7,6 +7,39 @@ export type DownloadedPage = {
     height: number;
 };
 
+export type DownloadErrorCode =
+    | "http_status"
+    | "invalid_url"
+    | "filesystem"
+    | "decode"
+    | "network"
+    | "unknown";
+
+export class DownloadError extends Error {
+    statusCode?: number;
+    retriable: boolean;
+    code: DownloadErrorCode;
+
+    constructor(
+        message: string,
+        options?: {
+            statusCode?: number;
+            retriable?: boolean;
+            code?: DownloadErrorCode;
+            cause?: unknown;
+        }
+    ) {
+        super(message);
+        this.name = "DownloadError";
+        this.statusCode = options?.statusCode;
+        this.retriable = options?.retriable ?? true;
+        this.code = options?.code ?? "unknown";
+        if (options?.cause !== undefined) {
+            (this as Error & { cause?: unknown }).cause = options.cause;
+        }
+    }
+}
+
 class ImageDownloadManager {
     private cacheDir = `${(FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory}webtoon_reader_cache/`;
     private activeDownloads = new Map<string, Promise<DownloadedPage>>();
@@ -23,15 +56,77 @@ class ImageDownloadManager {
         }
     }
 
+    private getSafeExtension(url: string): string {
+        try {
+            const pathname = new URL(url).pathname;
+            const ext = pathname.split('.').pop()?.toLowerCase() ?? "";
+            // Avoid slashes/query fragments and keep extension bounded.
+            if (/^[a-z0-9]{1,5}$/.test(ext)) {
+                return ext;
+            }
+        } catch {
+            // Fall through to default when URL parsing fails.
+        }
+        return "jpg";
+    }
+
+    private hashString(value: string): string {
+        let hash = 2166136261;
+        for (let i = 0; i < value.length; i += 1) {
+            hash ^= value.charCodeAt(i);
+            hash +=
+                (hash << 1) +
+                (hash << 4) +
+                (hash << 7) +
+                (hash << 8) +
+                (hash << 24);
+        }
+        return (hash >>> 0).toString(36);
+    }
+
+    private isRetriableHttpStatus(status: number): boolean {
+        if (status === 429) {
+            return true;
+        }
+        return status >= 500 && status <= 599;
+    }
+
+    private classifyUnknownError(error: unknown): { retriable: boolean; code: DownloadErrorCode } {
+        const message = (error as any)?.message ? String((error as any).message) : String(error ?? "Unknown error");
+        const normalized = message.toLowerCase();
+
+        if (normalized.includes("invalid url") || normalized.includes("malformed")) {
+            return { retriable: false, code: "invalid_url" };
+        }
+
+        if (normalized.includes("no such file") || normalized.includes("does not exist")) {
+            return { retriable: false, code: "filesystem" };
+        }
+
+        if (normalized.includes("decode") || normalized.includes("format") || normalized.includes("corrupt")) {
+            return { retriable: false, code: "decode" };
+        }
+
+        if (
+            normalized.includes("timeout") ||
+            normalized.includes("network") ||
+            normalized.includes("temporar") ||
+            normalized.includes("timed out")
+        ) {
+            return { retriable: true, code: "network" };
+        }
+
+        return { retriable: true, code: "unknown" };
+    }
+
     /**
-     * Generates a safe local filename based on the URL and Chapter ID
+     * Generates a short, filesystem-safe filename.
      */
     private getLocalFilePath(chapterId: string, url: string): string {
-        // Simple hash/encode to avoid invalid characters
-        const encodedChapterId = encodeURIComponent(chapterId);
-        const encodedUrl = encodeURIComponent(url);
-        const ext = url.split('.').pop()?.split('?')[0] || 'jpg';
-        return `${this.cacheDir}${encodedChapterId}_${encodedUrl}.${ext}`;
+        const chapterHash = this.hashString(chapterId);
+        const urlHash = this.hashString(url);
+        const ext = this.getSafeExtension(url);
+        return `${this.cacheDir}${chapterHash}_${urlHash}.${ext}`;
     }
 
     /**
@@ -93,7 +188,7 @@ class ImageDownloadManager {
                     width: dimensions.width,
                     height: dimensions.height,
                 };
-            } catch (e) {
+            } catch {
                 // If measuring fails, file might be corrupted. Delete and re-download.
                 await FileSystem.deleteAsync(localUri, { idempotent: true });
             }
@@ -106,7 +201,11 @@ class ImageDownloadManager {
             });
 
             if (result.status !== 200) {
-                throw new Error(`Failed to download image, status: ${result.status}`);
+                throw new DownloadError(`Failed to download image, status: ${result.status}`, {
+                    statusCode: result.status,
+                    retriable: this.isRetriableHttpStatus(result.status),
+                    code: "http_status",
+                });
             }
 
             const dimensions = await this.measureImageDimensions(result.uri);
@@ -120,7 +219,20 @@ class ImageDownloadManager {
         } catch (e) {
             // Cleanup on failure
             await FileSystem.deleteAsync(localUri, { idempotent: true });
-            throw e;
+
+            if (e instanceof DownloadError) {
+                throw e;
+            }
+
+            const classification = this.classifyUnknownError(e);
+            const message = (e as any)?.message
+                ? String((e as any).message)
+                : "Failed to download image";
+            throw new DownloadError(message, {
+                retriable: classification.retriable,
+                code: classification.code,
+                cause: e,
+            });
         }
     }
 
@@ -129,9 +241,9 @@ class ImageDownloadManager {
      */
     public async evictChapter(chapterId: string) {
         try {
-            const encodedChapterId = encodeURIComponent(chapterId);
+            const chapterHash = this.hashString(chapterId);
             const files = await FileSystem.readDirectoryAsync(this.cacheDir);
-            const chapterFiles = files.filter(f => f.startsWith(`${encodedChapterId}_`));
+            const chapterFiles = files.filter(f => f.startsWith(`${chapterHash}_`));
 
             await Promise.all(
                 chapterFiles.map(f => FileSystem.deleteAsync(`${this.cacheDir}${f}`, { idempotent: true }))
