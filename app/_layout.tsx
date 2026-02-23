@@ -69,6 +69,10 @@ export default function RootLayout() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
+                          name="settings/webtoon-loading"
+                          options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
                           name="reader/[sourceId]/[mangaId]/[chapterId]"
                           options={{ headerShown: false }}
                         />
