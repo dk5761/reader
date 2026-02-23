@@ -70,6 +70,7 @@ export default function ReaderScreen() {
       ? { chapterId: initialChapterId, pageIndex: initialPage }
       : null,
   );
+  const lastAutoAnchoredChapterRef = useRef<string | null>(null);
 
   const [schedulerVersion, setSchedulerVersion] = useState(0);
   const schedulerRef = useRef<PageDownloadScheduler | null>(null);
@@ -356,6 +357,7 @@ export default function ReaderScreen() {
   useEffect(() => {
     schedulerRef.current?.dispose();
     schedulerRef.current = null;
+    lastAutoAnchoredChapterRef.current = null;
     chapterSwitchTargetRef.current = null;
     setChapterSwitchTargetId(null);
     setEntryChapterId(initialChapterId);
@@ -664,6 +666,10 @@ export default function ReaderScreen() {
       );
 
       if (!cancelled && didSeek) {
+        debugLog("pending seek applied", {
+          chapterId: pendingSeek.chapterId,
+          pageIndex: pendingSeek.pageIndex,
+        });
         setPendingSeek(null);
         if (chapterSwitchTargetId === pendingSeek.chapterId) {
           chapterSwitchTargetRef.current = null;
@@ -688,7 +694,7 @@ export default function ReaderScreen() {
         clearTimeout(retryTimer);
       }
     };
-  }, [combinedData, pendingSeek, chapterSwitchTargetId]);
+  }, [chapterSwitchTargetId, combinedData, debugLog, pendingSeek]);
 
   const handleEndReached = useCallback((reachedChapterId: string) => {
     if (chapterSwitchTargetRef.current) {
@@ -757,6 +763,9 @@ export default function ReaderScreen() {
     if (switchingTo && chapterId !== switchingTo) {
       return;
     }
+    if (chapterId !== lastAutoAnchoredChapterRef.current) {
+      lastAutoAnchoredChapterRef.current = null;
+    }
     if (chapterId !== currentOverlayChapterId) {
       setCurrentOverlayPageIndex(0);
       setCurrentProgressCursor({
@@ -765,9 +774,23 @@ export default function ReaderScreen() {
       });
       setCurrentPage(0);
       schedulerRef.current?.setCursor(chapterId, 0);
+
+      // Auto chapter transition should always start at top of next chapter.
+      // Queue a native seek once data for chapter page 0 exists.
+      const hasPendingAnchor =
+        pendingSeek?.chapterId === chapterId && pendingSeek?.pageIndex === 0;
+      if (
+        !switchingTo &&
+        !hasPendingAnchor &&
+        lastAutoAnchoredChapterRef.current !== chapterId
+      ) {
+        debugLog("auto anchor chapter entry", { chapterId, pageIndex: 0 });
+        setPendingSeek({ chapterId, pageIndex: 0 });
+        lastAutoAnchoredChapterRef.current = chapterId;
+      }
     }
     setCurrentOverlayChapterId(chapterId);
-  }, [currentOverlayChapterId, setCurrentPage]);
+  }, [currentOverlayChapterId, debugLog, pendingSeek?.chapterId, pendingSeek?.pageIndex, setCurrentPage]);
 
   const handleImageError = useCallback((_pageId: string, _error: string) => {}, []);
 
