@@ -150,6 +150,17 @@ export const appSettings = sqliteTable("app_settings", {
     .notNull()
     .default(false),
   defaultReaderMode: text("default_reader_mode").notNull().default("vertical"),
+  webtoonWindowAhead: integer("webtoon_window_ahead").notNull().default(6),
+  webtoonWindowBehind: integer("webtoon_window_behind").notNull().default(1),
+  webtoonForegroundConcurrency: integer("webtoon_foreground_concurrency")
+    .notNull()
+    .default(1),
+  webtoonBackgroundConcurrency: integer("webtoon_background_concurrency")
+    .notNull()
+    .default(1),
+  webtoonChapterPreloadLeadPages: integer("webtoon_chapter_preload_lead_pages")
+    .notNull()
+    .default(4),
   updatedAt: integer("updated_at").notNull(),
 });
 

@@ -238,14 +238,28 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
 
   settings.forEach((s) => {
     const { id, ...dataWithoutId } = s;
+    const normalizedSettings = {
+      ...dataWithoutId,
+      webtoonWindowAhead: dataWithoutId.webtoonWindowAhead ?? 6,
+      webtoonWindowBehind: dataWithoutId.webtoonWindowBehind ?? 1,
+      webtoonForegroundConcurrency: dataWithoutId.webtoonForegroundConcurrency ?? 1,
+      webtoonBackgroundConcurrency: dataWithoutId.webtoonBackgroundConcurrency ?? 1,
+      webtoonChapterPreloadLeadPages:
+        dataWithoutId.webtoonChapterPreloadLeadPages ?? 4,
+    };
     db.insert(appSettings)
-      .values(dataWithoutId)
+      .values(normalizedSettings)
       .onConflictDoUpdate({
         target: appSettings.id,
         set: {
-          allowNsfwSources: dataWithoutId.allowNsfwSources,
-          defaultReaderMode: dataWithoutId.defaultReaderMode,
-          updatedAt: dataWithoutId.updatedAt,
+          allowNsfwSources: normalizedSettings.allowNsfwSources,
+          defaultReaderMode: normalizedSettings.defaultReaderMode,
+          webtoonWindowAhead: normalizedSettings.webtoonWindowAhead,
+          webtoonWindowBehind: normalizedSettings.webtoonWindowBehind,
+          webtoonForegroundConcurrency: normalizedSettings.webtoonForegroundConcurrency,
+          webtoonBackgroundConcurrency: normalizedSettings.webtoonBackgroundConcurrency,
+          webtoonChapterPreloadLeadPages: normalizedSettings.webtoonChapterPreloadLeadPages,
+          updatedAt: normalizedSettings.updatedAt,
         },
       })
       .run();

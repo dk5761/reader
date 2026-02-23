@@ -137,6 +137,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
   id INTEGER PRIMARY KEY NOT NULL,
   allow_nsfw_sources INTEGER NOT NULL DEFAULT 0,
   default_reader_mode TEXT NOT NULL DEFAULT 'vertical',
+  webtoon_window_ahead INTEGER NOT NULL DEFAULT 6,
+  webtoon_window_behind INTEGER NOT NULL DEFAULT 1,
+  webtoon_foreground_concurrency INTEGER NOT NULL DEFAULT 1,
+  webtoon_background_concurrency INTEGER NOT NULL DEFAULT 1,
+  webtoon_chapter_preload_lead_pages INTEGER NOT NULL DEFAULT 4,
   updated_at INTEGER NOT NULL
 );
 

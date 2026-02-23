@@ -12,6 +12,7 @@ const drizzleDatabase = drizzle(sqliteDatabase, { schema });
 
 let isDatabaseInitialized = false;
 let isLegacySourceMigrationApplied = false;
+let isAppSettingsColumnMigrationApplied = false;
 
 const remapSourceId = (sourceId: string): string =>
   sourceId === LEGACY_SOURCE_ID ? CURRENT_SOURCE_ID : sourceId;
@@ -154,12 +155,58 @@ const migrateLegacySourceIds = (): void => {
   isLegacySourceMigrationApplied = true;
 };
 
+const ensureAppSettingsColumns = (): void => {
+  if (isAppSettingsColumnMigrationApplied) {
+    return;
+  }
+
+  const tableInfo = sqliteDatabase.getAllSync<{ name: string }>(
+    "PRAGMA table_info(app_settings)"
+  );
+  const existingColumns = new Set(tableInfo.map((entry) => entry.name));
+
+  const columnStatements: Array<{ name: string; sql: string }> = [
+    {
+      name: "webtoon_window_ahead",
+      sql: "ALTER TABLE app_settings ADD COLUMN webtoon_window_ahead INTEGER NOT NULL DEFAULT 6",
+    },
+    {
+      name: "webtoon_window_behind",
+      sql: "ALTER TABLE app_settings ADD COLUMN webtoon_window_behind INTEGER NOT NULL DEFAULT 1",
+    },
+    {
+      name: "webtoon_foreground_concurrency",
+      sql: "ALTER TABLE app_settings ADD COLUMN webtoon_foreground_concurrency INTEGER NOT NULL DEFAULT 1",
+    },
+    {
+      name: "webtoon_background_concurrency",
+      sql: "ALTER TABLE app_settings ADD COLUMN webtoon_background_concurrency INTEGER NOT NULL DEFAULT 1",
+    },
+    {
+      name: "webtoon_chapter_preload_lead_pages",
+      sql: "ALTER TABLE app_settings ADD COLUMN webtoon_chapter_preload_lead_pages INTEGER NOT NULL DEFAULT 4",
+    },
+  ];
+
+  sqliteDatabase.withTransactionSync(() => {
+    columnStatements.forEach((statement) => {
+      if (existingColumns.has(statement.name)) {
+        return;
+      }
+      sqliteDatabase.execSync(statement.sql);
+    });
+  });
+
+  isAppSettingsColumnMigrationApplied = true;
+};
+
 export const initializeDatabase = (): void => {
   if (isDatabaseInitialized) {
     return;
   }
 
   sqliteDatabase.execSync(DATABASE_BOOTSTRAP_SQL);
+  ensureAppSettingsColumns();
   migrateLegacySourceIds();
   isDatabaseInitialized = true;
 };
