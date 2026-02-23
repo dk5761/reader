@@ -18,6 +18,8 @@ import { imageDownloadManager } from "./utils/ImageDownloadManager";
 import { PageDownloadScheduler, type SchedulerTask } from "./utils/PageDownloadScheduler";
 import { appSettingsQueryOptions } from "@/features/settings/api";
 
+const MAX_VISITED_CHAPTERS = 3;
+
 export default function ReaderScreen() {
   const queryClient = useQueryClient();
   const params = useLocalSearchParams<{
@@ -282,6 +284,30 @@ export default function ReaderScreen() {
   ]);
 
   const hasAppliedPersistedInitialPageRef = useRef(false);
+  const pruneOldestChapters = useCallback(
+    (chapterIds: string[], protectedChapterId?: string | null) => {
+      const nextIds = [...chapterIds];
+      const prunedIds: string[] = [];
+
+      while (nextIds.length > MAX_VISITED_CHAPTERS) {
+        let pruneIndex = 0;
+        if (protectedChapterId && nextIds[pruneIndex] === protectedChapterId) {
+          pruneIndex = nextIds.findIndex((id) => id !== protectedChapterId);
+        }
+        if (pruneIndex < 0 || pruneIndex >= nextIds.length) {
+          break;
+        }
+        const [removed] = nextIds.splice(pruneIndex, 1);
+        if (removed) {
+          prunedIds.push(removed);
+        }
+      }
+
+      return { nextIds, prunedIds };
+    },
+    [],
+  );
+
   const handleEvictChapters = useCallback((chapterIds: string[]) => {
     if (chapterIds.length === 0) {
       return;
@@ -691,8 +717,13 @@ export default function ReaderScreen() {
 
     if (!chaptersQuery.data) return;
 
+    const currentActiveChapterIds = activeChapterIdsRef.current;
+    if (currentActiveChapterIds.length === 0) {
+      return;
+    }
+
     // Only preload if we reached the boundary of the explicitly *last* chapter in our list
-    if (reachedChapterId !== activeChapterIds[activeChapterIds.length - 1]) {
+    if (reachedChapterId !== currentActiveChapterIds[currentActiveChapterIds.length - 1]) {
       return;
     }
 
@@ -703,11 +734,29 @@ export default function ReaderScreen() {
     const nextIndex = currentIndex - 1;
     if (nextIndex >= 0) {
       const nextChapterId = chaptersQuery.data[nextIndex].id;
-      if (!activeChapterIds.includes(nextChapterId)) {
-        setActiveChapterIds(prev => [...prev, nextChapterId]);
+      if (!currentActiveChapterIds.includes(nextChapterId)) {
+        const appended = [...currentActiveChapterIds, nextChapterId];
+        const { nextIds, prunedIds } = pruneOldestChapters(
+          appended,
+          currentOverlayChapterId,
+        );
+
+        debugLog("active_window_update", {
+          reachedChapterId,
+          nextChapterId,
+          before: currentActiveChapterIds,
+          after: nextIds,
+          pruned: prunedIds,
+          maxVisitedChapters: MAX_VISITED_CHAPTERS,
+        });
+
+        setActiveChapterIds(nextIds);
+        prunedIds.forEach((chapterId) => {
+          imageDownloadManager.evictChapter(chapterId).catch(console.error);
+        });
       }
     }
-  }, [chaptersQuery.data, activeChapterIds]);
+  }, [chaptersQuery.data, currentOverlayChapterId, debugLog, pruneOldestChapters]);
 
   const toggleOverlay = useCallback(() => {
     Animated.timing(overlayOpacity, {
