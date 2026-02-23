@@ -13,6 +13,27 @@ struct WebtoonPage: Hashable {
   let previousChapterTitle: String?
   let nextChapterTitle: String?
   let headers: [String: String]?
+
+  static func == (lhs: WebtoonPage, rhs: WebtoonPage) -> Bool {
+    lhs.id == rhs.id
+  }
+
+  func hash(into hasher: inout Hasher) {
+    hasher.combine(id)
+  }
+
+  func hasRenderableChanges(comparedTo other: WebtoonPage) -> Bool {
+    localPath != other.localPath ||
+      pageIndex != other.pageIndex ||
+      chapterId != other.chapterId ||
+      aspectRatio != other.aspectRatio ||
+      loadState != other.loadState ||
+      errorMessage != other.errorMessage ||
+      isTransition != other.isTransition ||
+      previousChapterTitle != other.previousChapterTitle ||
+      nextChapterTitle != other.nextChapterTitle ||
+      headers != other.headers
+  }
 }
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
@@ -138,6 +159,10 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   public func updateData(data: [[String: Any]]) {
+    let previousItemsById = Dictionary(
+      uniqueKeysWithValues: dataSource.snapshot().itemIdentifiers.map { ($0.id, $0) }
+    )
+
     var snapshot = NSDiffableDataSourceSnapshot<Int, WebtoonPage>()
     snapshot.appendSections([0])
 
@@ -192,6 +217,17 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
 
     snapshot.appendItems(pages)
+
+    let changedItems = pages.filter { page in
+      guard let previousPage = previousItemsById[page.id] else {
+        return false
+      }
+      return page.hasRenderableChanges(comparedTo: previousPage)
+    }
+    if !changedItems.isEmpty {
+      snapshot.reloadItems(changedItems)
+    }
+
     dataSource.apply(snapshot, animatingDifferences: false)
   }
 
