@@ -307,6 +307,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   private func emitPageVisible(page: WebtoonPage) {
+    // Ignore synthetic transition cells for chapter/page position tracking.
+    // They should not become the canonical reading position.
+    if page.isTransition || page.pageIndex < 0 {
+      return
+    }
+
     if page.id == lastEmittedPageId {
       return
     }
@@ -319,26 +325,41 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       ])
     }
 
-    if page.pageIndex >= 0 {
-      onPageChanged([
-        "chapterId": page.chapterId,
-        "pageIndex": page.pageIndex
-      ])
-    }
+    onPageChanged([
+      "chapterId": page.chapterId,
+      "pageIndex": page.pageIndex
+    ])
   }
 
   private func primaryVisiblePage(from visibleIndexPaths: [IndexPath]) -> WebtoonPage? {
     guard !visibleIndexPaths.isEmpty else { return nil }
 
-    // Prefer the item around upper-middle viewport so page/chapter overlays update
-    // when the user has meaningfully progressed, instead of waiting for top cell exit.
+    // Use the first real page intersecting the top viewport region as canonical current page.
+    // This avoids jumping to a deeper page index when transition/short pages are visible.
+    let topBoundaryY = collectionView.contentOffset.y + 8
+    for indexPath in visibleIndexPaths.sorted() {
+      guard let attributes = collectionView.layoutAttributesForItem(at: indexPath),
+            let page = dataSource.itemIdentifier(for: indexPath),
+            !page.isTransition,
+            page.pageIndex >= 0 else {
+        continue
+      }
+
+      if attributes.frame.maxY >= topBoundaryY {
+        return page
+      }
+    }
+
+    // Fallback: probe upper viewport region, but only for real pages.
     let probePoint = CGPoint(
       x: collectionView.bounds.midX,
-      y: collectionView.contentOffset.y + (collectionView.bounds.height * 0.35)
+      y: collectionView.contentOffset.y + (collectionView.bounds.height * 0.12)
     )
 
     if let probeIndexPath = collectionView.indexPathForItem(at: probePoint),
-       let probePage = dataSource.itemIdentifier(for: probeIndexPath) {
+       let probePage = dataSource.itemIdentifier(for: probeIndexPath),
+       !probePage.isTransition,
+       probePage.pageIndex >= 0 {
       return probePage
     }
 
@@ -348,7 +369,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     for indexPath in visibleIndexPaths {
       guard let attributes = collectionView.layoutAttributesForItem(at: indexPath),
-            let page = dataSource.itemIdentifier(for: indexPath) else {
+            let page = dataSource.itemIdentifier(for: indexPath),
+            !page.isTransition,
+            page.pageIndex >= 0 else {
         continue
       }
 
@@ -368,8 +391,15 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return bestPage
     }
 
-    guard let fallbackIndexPath = visibleIndexPaths.min() else { return nil }
-    return dataSource.itemIdentifier(for: fallbackIndexPath)
+    for indexPath in visibleIndexPaths.sorted() {
+      if let page = dataSource.itemIdentifier(for: indexPath),
+         !page.isTransition,
+         page.pageIndex >= 0 {
+        return page
+      }
+    }
+
+    return nil
   }
 
   private func shouldPreload(chapterId: String, pageIndex: Int) -> Bool {
