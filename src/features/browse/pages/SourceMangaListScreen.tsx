@@ -1,9 +1,10 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
+  RefreshControl,
   Text,
   View,
   useWindowDimensions,
@@ -261,6 +262,15 @@ export default function SourceMangaListScreen() {
     () => mangaQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [mangaQuery.data]
   );
+  const isRefreshing =
+    mangaQuery.isRefetching && !mangaQuery.isFetchingNextPage && !mangaQuery.isPending;
+  const handleRefresh = useCallback(() => {
+    if (mangaQuery.isPending || mangaQuery.isFetchingNextPage) {
+      return;
+    }
+
+    void mangaQuery.refetch();
+  }, [mangaQuery]);
   const libraryMembershipSet = useMemo(
     () =>
       new Set(
@@ -420,6 +430,13 @@ export default function SourceMangaListScreen() {
                   </Text>
                 </View>
               ) : null
+            }
+            refreshControl={
+              <RefreshControl
+                tintColor="#67A4FF"
+                refreshing={isRefreshing}
+                onRefresh={handleRefresh}
+              />
             }
           />
         )}

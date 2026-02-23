@@ -34,6 +34,7 @@ import {
   Animated,
   FlatList,
   ListRenderItemInfo,
+  RefreshControl,
   Text,
   View,
 } from "react-native";
@@ -208,6 +209,17 @@ export default function MangaDetailsScreen() {
     [allChapters, chaptersPage],
   );
   const hasMoreChapters = visibleChapters.length < allChapters.length;
+  const isRefreshing =
+    (detailsQuery.isRefetching || chaptersQuery.isRefetching) &&
+    !detailsQuery.isPending &&
+    !chaptersQuery.isPending;
+  const handleRefresh = () => {
+    if (detailsQuery.isPending || chaptersQuery.isPending) {
+      return;
+    }
+
+    void Promise.all([detailsQuery.refetch(), chaptersQuery.refetch()]);
+  };
   const progressByChapterId = useMemo(
     () =>
       new Map(
@@ -780,6 +792,13 @@ export default function MangaDetailsScreen() {
               </Text>
             </View>
           )
+        }
+        refreshControl={
+          <RefreshControl
+            tintColor="#67A4FF"
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+          />
         }
       />
     </View>

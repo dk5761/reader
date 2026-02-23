@@ -4,7 +4,7 @@ import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useMemo } from "react";
-import { FlatList, Text, View } from "react-native";
+import { FlatList, RefreshControl, Text, View } from "react-native";
 import { useSource } from "@/services/source";
 import {
   ActionPillButton,
@@ -100,6 +100,9 @@ export default function HistoryMangaHistoryScreen() {
     () => timelineQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [timelineQuery.data]
   );
+  const isRefreshing =
+    !timelineQuery.isPending &&
+    (timelineQuery.isRefetching || latestEntryQuery.isRefetching);
 
   if (!source || !sourceId || !mangaId) {
     return (
@@ -276,8 +279,19 @@ export default function HistoryMangaHistoryScreen() {
             </View>
           ) : null
         }
+        refreshControl={
+          <RefreshControl
+            tintColor="#67A4FF"
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              if (timelineQuery.isPending) {
+                return;
+              }
+              void Promise.all([latestEntryQuery.refetch(), timelineQuery.refetch()]);
+            }}
+          />
+        }
       />
     </View>
   );
 }
-

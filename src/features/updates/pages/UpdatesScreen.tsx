@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { useRouter } from "expo-router";
 import { Button, Spinner } from "heroui-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FlatList, Text, View } from "react-native";
+import { FlatList, RefreshControl, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { libraryQueryFactory } from "@/services/library";
 import { getLibraryUpdateRunSnapshot } from "@/services/library-update";
@@ -165,6 +165,20 @@ export default function UpdatesScreen() {
 
     return "No updates detected yet.";
   }, [eventsQuery.isPending, selectedSourceId, todayOnly, unreadOnly]);
+  const isRefreshing =
+    !eventsQuery.isPending &&
+    (eventsQuery.isRefetching || runSnapshotQuery.isRefetching || feedStateQuery.isRefetching);
+  const handleRefresh = useCallback(() => {
+    if (eventsQuery.isPending) {
+      return;
+    }
+
+    void Promise.all([
+      runSnapshotQuery.refetch(),
+      feedStateQuery.refetch(),
+      eventsQuery.refetch(),
+    ]);
+  }, [eventsQuery, feedStateQuery, runSnapshotQuery]);
 
   if (runSnapshotQuery.isError) {
     return (
@@ -273,6 +287,13 @@ export default function UpdatesScreen() {
               )}
             </View>
           ) : null
+        }
+        refreshControl={
+          <RefreshControl
+            tintColor="#67A4FF"
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+          />
         }
       />
 

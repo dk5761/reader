@@ -1,17 +1,34 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
-import { useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useCallback, useState } from "react";
+import { RefreshControl, ScrollView, Text, View } from "react-native";
 import { useSource } from "@/services/source";
 import { ScreenHeader } from "@/shared/ui";
 import { GlobalSearchPanel } from "../components";
 import { getHostLabel } from "@/shared/utils";
+import { globalSearchQueryFactory } from "../api";
 
 export default function BrowseTabScreen() {
   const router = useRouter();
-  const { sources } = useSource();
+  const queryClient = useQueryClient();
+  const { sources, refreshSources } = useSource();
   const [isGlobalSearchActive, setIsGlobalSearchActive] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const handleRefresh = useCallback(() => {
+    if (isRefreshing) {
+      return;
+    }
+
+    setIsRefreshing(true);
+    refreshSources();
+    void queryClient
+      .invalidateQueries({ queryKey: globalSearchQueryFactory.all() })
+      .finally(() => {
+        setIsRefreshing(false);
+      });
+  }, [isRefreshing, queryClient, refreshSources]);
 
   return (
     <View className="flex-1 bg-[#111214]">
@@ -25,6 +42,13 @@ export default function BrowseTabScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerClassName="px-4 pb-8"
+        refreshControl={
+          <RefreshControl
+            tintColor="#67A4FF"
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+          />
+        }
       >
         <GlobalSearchPanel
           sources={sources}

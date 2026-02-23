@@ -3,7 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import { Button } from "heroui-native";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Text, View, useWindowDimensions } from "react-native";
+import {
+  Alert,
+  FlatList,
+  RefreshControl,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSource } from "@/services/source";
 import type {
@@ -118,6 +125,7 @@ export default function LibraryScreen() {
   }, [screenWidth]);
 
   const selectedCount = selectedEntryIds.length;
+  const isRefreshing = entriesQuery.isRefetching && !entriesQuery.isPending;
 
   useEffect(() => {
     if (isSelectMode && selectedCount === 0) {
@@ -338,6 +346,18 @@ export default function LibraryScreen() {
                 No visible manga in your library.
               </Text>
             </View>
+          }
+          refreshControl={
+            <RefreshControl
+              tintColor="#67A4FF"
+              refreshing={isRefreshing}
+              onRefresh={() => {
+                if (entriesQuery.isPending) {
+                  return;
+                }
+                void entriesQuery.refetch();
+              }}
+            />
           }
         />
       )}

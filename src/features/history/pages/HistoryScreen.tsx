@@ -5,7 +5,7 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useMemo, useState } from "react";
-import { FlatList, Text, View } from "react-native";
+import { FlatList, RefreshControl, Text, View } from "react-native";
 import type { ReadingHistoryMangaGroup } from "@/services/history";
 import { useSource } from "@/services/source";
 import {
@@ -46,6 +46,7 @@ export default function HistoryScreen() {
 
   const hasMore = visibleGroups.length >= entryLimit;
   const isLoadingMore = groupedHistoryQuery.isFetching;
+  const isRefreshing = groupedHistoryQuery.isRefetching && !groupedHistoryQuery.isPending;
 
   const loadMore = () => {
     if (!isLoadingMore && hasMore) {
@@ -176,6 +177,18 @@ export default function HistoryScreen() {
               <Text className="text-xs text-[#8B8D98]">All history loaded</Text>
             </View>
           ) : null
+        }
+        refreshControl={
+          <RefreshControl
+            tintColor="#67A4FF"
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              if (groupedHistoryQuery.isPending) {
+                return;
+              }
+              void groupedHistoryQuery.refetch();
+            }}
+          />
         }
       />
     </View>
