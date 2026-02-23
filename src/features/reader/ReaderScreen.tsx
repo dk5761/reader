@@ -4,7 +4,7 @@ import { chapterProgressQueryOptions } from "@/services/progress";
 import { getSourceChapters, getSourceMangaDetails } from "@/services/source";
 import { sourceQueryFactory } from "@/services/source/core/queryFactory";
 import { getSourceChapterPages } from "@/services/source/core/runtime";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
@@ -30,6 +30,7 @@ const AUTO_RETRY_BACKOFF_MS = [750, 2000];
 const DOWNLOAD_CONCURRENCY = 3;
 
 export default function ReaderScreen() {
+  const queryClient = useQueryClient();
   const params = useLocalSearchParams<{
     sourceId?: string | string[];
     mangaId?: string | string[];
@@ -53,6 +54,7 @@ export default function ReaderScreen() {
 
   const { setChapter, setCurrentPage, chapter, reset } = useReaderStore();
   const [entryChapterId, setEntryChapterId] = useState(initialChapterId);
+  const [routeResetVersion, setRouteResetVersion] = useState(0);
 
   const [activeChapterIds, setActiveChapterIds] = useState<string[]>([initialChapterId]);
 
@@ -86,6 +88,17 @@ export default function ReaderScreen() {
   const inFlightPagesRef = useRef<Set<string>>(new Set());
   const failedPagesRef = useRef<Record<string, FailedPage>>({});
   const retryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const activeChapterIdsRef = useRef<string[]>([initialChapterId]);
+  const sourceRef = useRef<{ sourceId: string; mangaId: string }>({ sourceId, mangaId });
+  const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      if (payload) {
+        console.log("[ReaderDebug]", message, payload);
+        return;
+      }
+      console.log("[ReaderDebug]", message);
+    }
+  }, []);
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -138,6 +151,31 @@ export default function ReaderScreen() {
     () => new Map((chaptersQuery.data ?? []).map((chapter) => [chapter.id, chapter])),
     [chaptersQuery.data]
   );
+
+  useEffect(() => {
+    activeChapterIdsRef.current = activeChapterIds;
+  }, [activeChapterIds]);
+
+  useEffect(() => {
+    sourceRef.current = { sourceId, mangaId };
+  }, [mangaId, sourceId]);
+
+  useEffect(() => {
+    debugLog("params", {
+      sourceId,
+      mangaId,
+      initialChapterId,
+      initialPage,
+      hasExplicitInitialPageParam,
+    });
+  }, [
+    debugLog,
+    hasExplicitInitialPageParam,
+    initialChapterId,
+    initialPage,
+    mangaId,
+    sourceId,
+  ]);
 
   useEffect(() => {
     if (!chaptersQuery.data || chaptersQuery.data.length === 0) {
@@ -209,6 +247,11 @@ export default function ReaderScreen() {
   // (Progress tracking might need to be explicitly managed onChapterChanged later)
   useEffect(() => {
     if (primaryChapterPages && entryChapterId) {
+      debugLog("setChapter from primaryChapterPages", {
+        entryChapterId,
+        pageCount: primaryChapterPages.length,
+        routeResetVersion,
+      });
       const pages: ReaderPage[] = primaryChapterPages.map((page, index) => ({
         index,
         pageId: `${entryChapterId}-${index}`,
@@ -237,8 +280,10 @@ export default function ReaderScreen() {
       }
     }
   }, [
+    debugLog,
     hasExplicitInitialPageParam,
     primaryChapterPages,
+    routeResetVersion,
     entryChapterId,
     sourceId,
     mangaId,
@@ -273,7 +318,15 @@ export default function ReaderScreen() {
     setDownloadedPages({});
     setFailedPages({});
     reset();
+    setRouteResetVersion((value) => value + 1);
+    debugLog("reset reader state on route change", {
+      sourceId,
+      mangaId,
+      initialChapterId,
+      initialPage,
+    });
   }, [
+    debugLog,
     hasExplicitInitialPageParam,
     initialChapterId,
     initialPage,
@@ -295,6 +348,73 @@ export default function ReaderScreen() {
       inFlightPages.clear();
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      const { sourceId: currentSourceId, mangaId: currentMangaId } = sourceRef.current;
+
+      if (!currentSourceId || !currentMangaId) {
+        return;
+      }
+
+      debugLog("cleanup cancelQueries on unmount", {
+        sourceId: currentSourceId,
+        mangaId: currentMangaId,
+        activeChapterIds: activeChapterIdsRef.current,
+      });
+
+      void queryClient.cancelQueries({
+        queryKey: sourceQueryFactory.manga(currentSourceId, currentMangaId),
+      });
+      void queryClient.cancelQueries({
+        queryKey: sourceQueryFactory.chapters(currentSourceId, currentMangaId),
+      });
+
+      activeChapterIdsRef.current.forEach((chapterId) => {
+        void queryClient.cancelQueries({
+          queryKey: sourceQueryFactory.chapterPages(currentSourceId, chapterId),
+        });
+      });
+    };
+  }, [debugLog, queryClient]);
+
+  useEffect(() => {
+    debugLog("primary chapter query state", {
+      entryChapterId,
+      activeChapterIds,
+      status: primaryQuery?.status ?? "missing",
+      fetchStatus: primaryQuery?.fetchStatus ?? "missing",
+      isPending: primaryQuery?.isPending ?? false,
+      isFetching: primaryQuery?.isFetching ?? false,
+      isError: primaryQuery?.isError ?? false,
+      hasData: Boolean(primaryQuery?.data),
+    });
+  }, [
+    activeChapterIds,
+    debugLog,
+    entryChapterId,
+    primaryQuery?.data,
+    primaryQuery?.fetchStatus,
+    primaryQuery?.isError,
+    primaryQuery?.isFetching,
+    primaryQuery?.isPending,
+    primaryQuery?.status,
+  ]);
+
+  useEffect(() => {
+    debugLog("source metadata query state", {
+      chaptersStatus: chaptersQuery.status,
+      chaptersFetchStatus: chaptersQuery.fetchStatus,
+      mangaStatus: mangaQuery.status,
+      mangaFetchStatus: mangaQuery.fetchStatus,
+    });
+  }, [
+    chaptersQuery.fetchStatus,
+    chaptersQuery.status,
+    debugLog,
+    mangaQuery.fetchStatus,
+    mangaQuery.status,
+  ]);
 
   useEffect(() => {
     if (hasExplicitInitialPageParam || !entryChapterId) {
@@ -763,6 +883,13 @@ export default function ReaderScreen() {
   });
 
   if (!chapter && (primaryQuery?.isPending || !primaryQuery?.data)) {
+    debugLog("rendering loading screen", {
+      reason: primaryQuery?.isPending ? "primaryQueryPending" : "primaryQueryNoData",
+      entryChapterId,
+      activeChapterIds,
+      primaryFetchStatus: primaryQuery?.fetchStatus ?? "missing",
+      primaryStatus: primaryQuery?.status ?? "missing",
+    });
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -787,6 +914,13 @@ export default function ReaderScreen() {
   }
 
   if (!chapter) {
+    debugLog("rendering fallback loading because chapter is null", {
+      entryChapterId,
+      routeResetVersion,
+      primaryStatus: primaryQuery?.status ?? "missing",
+      primaryFetchStatus: primaryQuery?.fetchStatus ?? "missing",
+      primaryHasData: Boolean(primaryQuery?.data),
+    });
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />

@@ -4,6 +4,7 @@ import type {
   RawAxiosResponseHeaders,
   ResponseType,
 } from "axios";
+import { isAxiosError } from "axios";
 import { toSourceRequestError } from "../core/errors";
 import type {
   SourceRequestClient,
@@ -96,6 +97,14 @@ const mapResponse = <T>(response: AxiosResponse<T>): SourceResponse<T> => ({
 const requestSource = async <T>(
   options: SourceRequestOptions,
 ): Promise<SourceResponse<T>> => {
+  if (typeof __DEV__ !== "undefined" && __DEV__) {
+    console.log("[SourceHttpDebug] request:start", {
+      method: options.method ?? "GET",
+      url: options.url,
+      hasSignal: Boolean(options.signal),
+    });
+  }
+
   const config: AxiosRequestConfig = {
     url: options.url,
     method: options.method,
@@ -109,8 +118,32 @@ const requestSource = async <T>(
 
   try {
     const response = await sourceHttpClient.request<T>(config);
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      console.log("[SourceHttpDebug] request:success", {
+        method: options.method ?? "GET",
+        url: options.url,
+        status: response.status,
+      });
+    }
     return mapResponse(response);
   } catch (error) {
+    if (isAxiosError(error) && error.code === "ERR_CANCELED") {
+      if (typeof __DEV__ !== "undefined" && __DEV__) {
+        console.log("[SourceHttpDebug] request:cancelled", {
+          method: options.method ?? "GET",
+          url: options.url,
+          reason: error.message,
+        });
+      }
+      throw error;
+    }
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      console.log("[SourceHttpDebug] request:error", {
+        method: options.method ?? "GET",
+        url: options.url,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
     throw toSourceRequestError(error);
   }
 };

@@ -159,6 +159,31 @@ export default function MangaDetailsScreen() {
     useSetBelowChaptersReadStateMutation();
   const [pendingBelowRule, setPendingBelowRule] =
     useState<PendingBelowRule | null>(null);
+  const debugLog = (message: string, payload?: Record<string, unknown>) => {
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      if (payload) {
+        console.log("[MangaDetailsDebug]", message, payload);
+        return;
+      }
+      console.log("[MangaDetailsDebug]", message);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (!sourceId || !mangaId) {
+        return;
+      }
+
+      debugLog("cleanup cancelQueries on unmount", { sourceId, mangaId });
+      void queryClient.cancelQueries({
+        queryKey: sourceQueryFactory.manga(sourceId, mangaId),
+      });
+      void queryClient.cancelQueries({
+        queryKey: sourceQueryFactory.chapters(sourceId, mangaId),
+      });
+    };
+  }, [mangaId, queryClient, sourceId]);
 
   const allChapters = useMemo(() => {
     const chapters = chaptersQuery.data ?? [];
@@ -244,6 +269,13 @@ export default function MangaDetailsScreen() {
       sourceId || "unknown",
       mangaId || "unknown",
     );
+
+    debugLog("back pressed during loading", {
+      sourceId,
+      mangaId,
+      detailsStatus: detailsQuery.status,
+      chaptersStatus: chaptersQuery.status,
+    });
 
     void queryClient.cancelQueries({ queryKey: mangaQueryKey });
     void queryClient.cancelQueries({ queryKey: chaptersQueryKey });

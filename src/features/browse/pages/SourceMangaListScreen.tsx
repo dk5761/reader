@@ -86,20 +86,21 @@ const queryMangaPage = async (params: {
   page: number;
   query: string;
   filters: Record<string, unknown> | undefined;
+  signal?: AbortSignal;
 }) => {
   if (params.mode === "popular") {
-    return getSourcePopularTitles(params.sourceId, { page: params.page });
+    return getSourcePopularTitles(params.sourceId, { page: params.page }, params.signal);
   }
 
   if (params.mode === "latest") {
-    return getSourceLatestUpdates(params.sourceId, { page: params.page });
+    return getSourceLatestUpdates(params.sourceId, { page: params.page }, params.signal);
   }
 
   return searchSourceManga(params.sourceId, {
     page: params.page,
     query: params.query,
     filters: params.filters,
-  });
+  }, params.signal);
 };
 
 export default function SourceMangaListScreen() {
@@ -236,13 +237,14 @@ export default function SourceMangaListScreen() {
       debouncedQuery,
       activeFilters ?? null,
     ],
-    queryFn: ({ pageParam = 1 }) =>
+    queryFn: ({ pageParam = 1, signal }) =>
       queryMangaPage({
         sourceId: routeSourceId,
         page: pageParam,
         mode,
         query: debouncedQuery,
         filters: activeFilters,
+        signal,
       }),
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
