@@ -757,8 +757,17 @@ export default function ReaderScreen() {
     if (switchingTo && chapterId !== switchingTo) {
       return;
     }
+    if (chapterId !== currentOverlayChapterId) {
+      setCurrentOverlayPageIndex(0);
+      setCurrentProgressCursor({
+        chapterId,
+        pageIndex: 0,
+      });
+      setCurrentPage(0);
+      schedulerRef.current?.setCursor(chapterId, 0);
+    }
     setCurrentOverlayChapterId(chapterId);
-  }, []);
+  }, [currentOverlayChapterId, setCurrentPage]);
 
   const handleImageError = useCallback((_pageId: string, _error: string) => {}, []);
 
