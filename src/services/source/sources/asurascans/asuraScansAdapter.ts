@@ -22,6 +22,8 @@ const DETAIL_INFO_GRID_SELECTOR = "div.grid > div";
 const DETAIL_INFO_FLEX_SELECTOR = "div.flex";
 const DETAIL_GENRES_SELECTOR = "div.flex.flex-row.flex-wrap.gap-3 button";
 const CHAPTER_LIST_SELECTOR = "div.scrollbar-thumb-themecolor > div.group";
+const SERIES_REQUEST_TIMEOUT_MS = 45000;
+const SERIES_HTML_CACHE_TTL_MS = 15000;
 
 const IGNORED_PATH_PREFIXES = ["/api", "/_next", "/storage"];
 const IMAGE_ATTRIBUTES = ["data-src", "src", "data-lazy-src"];
@@ -455,15 +457,56 @@ const parseChapterPages = async (
 const buildSeriesUrl = (params: URLSearchParams): string =>
   `${ASURA_BASE_URL}/series?${params.toString()}`;
 
-const requestText = async (url: string, context: SourceAdapterContext): Promise<string> => {
+const requestText = async (
+  url: string,
+  context: SourceAdapterContext,
+  options?: { timeoutMs?: number }
+): Promise<string> => {
   const response = await context.http.get<string>(url, {
     responseType: "text",
+    timeoutMs: options?.timeoutMs,
     headers: {
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
   });
 
   return typeof response.data === "string" ? response.data : String(response.data ?? "");
+};
+
+const seriesHtmlCache = new Map<string, { html: string; expiresAt: number }>();
+const seriesHtmlInFlight = new Map<string, Promise<string>>();
+
+const requestSeriesText = async (
+  seriesUrl: string,
+  context: SourceAdapterContext
+): Promise<string> => {
+  const now = Date.now();
+  const cached = seriesHtmlCache.get(seriesUrl);
+  if (cached && cached.expiresAt > now) {
+    return cached.html;
+  }
+
+  const inFlight = seriesHtmlInFlight.get(seriesUrl);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const requestPromise = requestText(seriesUrl, context, {
+    timeoutMs: SERIES_REQUEST_TIMEOUT_MS,
+  })
+    .then((html) => {
+      seriesHtmlCache.set(seriesUrl, {
+        html,
+        expiresAt: Date.now() + SERIES_HTML_CACHE_TTL_MS,
+      });
+      return html;
+    })
+    .finally(() => {
+      seriesHtmlInFlight.delete(seriesUrl);
+    });
+
+  seriesHtmlInFlight.set(seriesUrl, requestPromise);
+  return requestPromise;
 };
 
 export const asuraScansAdapter: SourceAdapter = {
@@ -542,13 +585,13 @@ export const asuraScansAdapter: SourceAdapter = {
 
   async getMangaDetails(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestSeriesText(mangaUrl, context);
     return parseMangaDetails(mangaUrl, html);
   },
 
   async getChapters(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestSeriesText(mangaUrl, context);
     return parseChapters(html);
   },
 
