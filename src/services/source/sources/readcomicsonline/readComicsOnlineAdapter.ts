@@ -14,6 +14,7 @@ const READ_COMICS_ONLINE_BASE_URL = "https://readcomicsonline.ru";
 const ACCEPT_HTML_HEADER =
   "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 const SEARCH_PAGE_SIZE = 24;
+const MANGA_REQUEST_CACHE_TTL_MS = 15000;
 
 const DETAIL_TITLE_SELECTOR = ".listmanga-header, .widget-title";
 const DETAIL_COVER_SELECTOR = ".row img.img-responsive";
@@ -467,6 +468,40 @@ const requestText = async (url: string, context: SourceAdapterContext): Promise<
   return typeof response.data === "string" ? response.data : String(response.data ?? "");
 };
 
+const mangaHtmlCache = new Map<string, { html: string; expiresAt: number }>();
+const mangaHtmlInFlight = new Map<string, Promise<string>>();
+
+const requestMangaText = async (
+  mangaUrl: string,
+  context: SourceAdapterContext
+): Promise<string> => {
+  const now = Date.now();
+  const cached = mangaHtmlCache.get(mangaUrl);
+  if (cached && cached.expiresAt > now) {
+    return cached.html;
+  }
+
+  const inFlight = mangaHtmlInFlight.get(mangaUrl);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const requestPromise = requestText(mangaUrl, context)
+    .then((html) => {
+      mangaHtmlCache.set(mangaUrl, {
+        html,
+        expiresAt: Date.now() + MANGA_REQUEST_CACHE_TTL_MS,
+      });
+      return html;
+    })
+    .finally(() => {
+      mangaHtmlInFlight.delete(mangaUrl);
+    });
+
+  mangaHtmlInFlight.set(mangaUrl, requestPromise);
+  return requestPromise;
+};
+
 const requestSearchSuggestions = async (
   query: string,
   context: SourceAdapterContext
@@ -599,13 +634,13 @@ export const readComicsOnlineAdapter: SourceAdapter = {
 
   async getMangaDetails(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestMangaText(mangaUrl, context);
     return parseMangaDetails(mangaUrl, html);
   },
 
   async getChapters(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestMangaText(mangaUrl, context);
     return parseChapters(mangaUrl, html);
   },
 

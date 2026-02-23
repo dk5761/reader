@@ -13,6 +13,7 @@ const MANGAKATANA_SOURCE_ID = "mangakatana";
 const MANGAKATANA_BASE_URL = "https://mangakatana.com";
 const ACCEPT_HTML_HEADER =
   "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+const MANGA_REQUEST_CACHE_TTL_MS = 15000;
 
 const selectors = {
   mangaItem: "div#book_list > div.item",
@@ -363,6 +364,40 @@ const requestText = async (url: string, context: SourceAdapterContext): Promise<
   return typeof response.data === "string" ? response.data : String(response.data ?? "");
 };
 
+const mangaHtmlCache = new Map<string, { html: string; expiresAt: number }>();
+const mangaHtmlInFlight = new Map<string, Promise<string>>();
+
+const requestMangaText = async (
+  mangaUrl: string,
+  context: SourceAdapterContext
+): Promise<string> => {
+  const now = Date.now();
+  const cached = mangaHtmlCache.get(mangaUrl);
+  if (cached && cached.expiresAt > now) {
+    return cached.html;
+  }
+
+  const inFlight = mangaHtmlInFlight.get(mangaUrl);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const requestPromise = requestText(mangaUrl, context)
+    .then((html) => {
+      mangaHtmlCache.set(mangaUrl, {
+        html,
+        expiresAt: Date.now() + MANGA_REQUEST_CACHE_TTL_MS,
+      });
+      return html;
+    })
+    .finally(() => {
+      mangaHtmlInFlight.delete(mangaUrl);
+    });
+
+  mangaHtmlInFlight.set(mangaUrl, requestPromise);
+  return requestPromise;
+};
+
 const buildLatestUrl = (page: number): string => `${MANGAKATANA_BASE_URL}/page/${page}`;
 const buildPopularUrl = (page: number): string => `${MANGAKATANA_BASE_URL}/manga/page/${page}`;
 const buildSearchUrl = (query: string, page: number): string =>
@@ -437,13 +472,13 @@ export const mangaKatanaAdapter: SourceAdapter = {
 
   async getMangaDetails(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestMangaText(mangaUrl, context);
     return parseMangaDetails(mangaUrl, html);
   },
 
   async getChapters(mangaId, context) {
     const mangaUrl = resolveMangaUrl(mangaId);
-    const html = await requestText(mangaUrl, context);
+    const html = await requestMangaText(mangaUrl, context);
     return parseChapters(mangaId, mangaUrl, html);
   },
 
@@ -453,4 +488,3 @@ export const mangaKatanaAdapter: SourceAdapter = {
     return parseChapterPages(chapterUrl, html);
   },
 };
-
