@@ -287,12 +287,6 @@ export default function ReaderScreen() {
       return;
     }
 
-    setActiveChapterIds((prev) => {
-      const removalSet = new Set(chapterIds);
-      const next = prev.filter((id) => !removalSet.has(id));
-      return next.length > 0 ? next : prev;
-    });
-
     chapterIds.forEach((chapterId) => {
       imageDownloadManager.evictChapter(chapterId).catch(console.error);
     });
