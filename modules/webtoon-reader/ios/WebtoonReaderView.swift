@@ -39,6 +39,11 @@ struct WebtoonPage: Hashable {
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
   private let preloadLeadPages = 4
 
+  private struct ScrollAnchor {
+    let pageId: String
+    let intraItemOffset: CGFloat
+  }
+
   let onEndReached = EventDispatcher()
   let onChapterChanged = EventDispatcher()
   let onSingleTap = EventDispatcher()
@@ -162,6 +167,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     let previousItemsById = Dictionary(
       uniqueKeysWithValues: dataSource.snapshot().itemIdentifiers.map { ($0.id, $0) }
     )
+    let scrollAnchor = captureScrollAnchor()
 
     var snapshot = NSDiffableDataSourceSnapshot<Int, WebtoonPage>()
     snapshot.appendSections([0])
@@ -228,7 +234,11 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       snapshot.reloadItems(changedItems)
     }
 
-    dataSource.apply(snapshot, animatingDifferences: false)
+    dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
+      guard let self = self else { return }
+      self.collectionView.layoutIfNeeded()
+      self.restoreScrollAnchor(scrollAnchor)
+    }
   }
 
   public func scrollToIndex(chapterId: String, index: Int) {
@@ -445,6 +455,59 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     // Prefetch callbacks are predictive and can include pages the user has not reached yet.
     // Emitting `onEndReached` from here causes chapter preload updates to run early, which can
     // mutate reader state while the user is still mid-chapter.
+  }
+
+  private func captureScrollAnchor() -> ScrollAnchor? {
+    let viewportTop = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+    let visibleIndexPaths = collectionView.indexPathsForVisibleItems.sorted()
+
+    for indexPath in visibleIndexPaths {
+      guard let page = dataSource.itemIdentifier(for: indexPath),
+            !page.isTransition,
+            page.pageIndex >= 0,
+            let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+        continue
+      }
+
+      if attributes.frame.maxY <= viewportTop {
+        continue
+      }
+
+      return ScrollAnchor(
+        pageId: page.id,
+        intraItemOffset: viewportTop - attributes.frame.minY
+      )
+    }
+
+    return nil
+  }
+
+  private func restoreScrollAnchor(_ anchor: ScrollAnchor?) {
+    guard let anchor = anchor else { return }
+
+    let snapshot = dataSource.snapshot()
+    guard let page = snapshot.itemIdentifiers.first(where: { $0.id == anchor.pageId }),
+          let indexPath = dataSource.indexPath(for: page),
+          let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+      return
+    }
+
+    let rawY = attributes.frame.minY + anchor.intraItemOffset - collectionView.adjustedContentInset.top
+    let minY = -collectionView.adjustedContentInset.top
+    let maxY = max(
+      minY,
+      collectionView.contentSize.height
+        - collectionView.bounds.height
+        + collectionView.adjustedContentInset.bottom
+    )
+    let clampedY = min(max(rawY, minY), maxY)
+
+    if abs(collectionView.contentOffset.y - clampedY) > 0.5 {
+      collectionView.setContentOffset(
+        CGPoint(x: collectionView.contentOffset.x, y: clampedY),
+        animated: false
+      )
+    }
   }
 }
 
