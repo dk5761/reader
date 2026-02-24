@@ -19,6 +19,7 @@ import { PageDownloadScheduler, type SchedulerTask } from "./utils/PageDownloadS
 import { appSettingsQueryOptions } from "@/features/settings/api";
 
 const MAX_VISITED_CHAPTERS = 3;
+const CURSOR_SYNC_THROTTLE_MS = 90;
 
 export default function ReaderScreen() {
   const queryClient = useQueryClient();
@@ -77,6 +78,9 @@ export default function ReaderScreen() {
   const schedulerRef = useRef<PageDownloadScheduler | null>(null);
   const lastSchedulerTaskDigestRef = useRef<string>("");
   const lastSchedulerChapterOrderDigestRef = useRef<string>("");
+  const lastCursorSyncAtRef = useRef(0);
+  const pendingCursorSyncRef = useRef<{ chapterId: string; pageIndex: number } | null>(null);
+  const cursorSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChapterIdsRef = useRef<string[]>([initialChapterId]);
   const sourceRef = useRef<{ sourceId: string; mangaId: string }>({ sourceId, mangaId });
   const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
@@ -88,6 +92,56 @@ export default function ReaderScreen() {
       console.log("[ReaderDebug]", message);
     }
   }, []);
+
+  const setSchedulerCursorNow = useCallback((chapterId: string, pageIndex: number) => {
+    if (!chapterId) {
+      return;
+    }
+
+    if (cursorSyncTimerRef.current) {
+      clearTimeout(cursorSyncTimerRef.current);
+      cursorSyncTimerRef.current = null;
+    }
+    pendingCursorSyncRef.current = null;
+
+    schedulerRef.current?.setCursor(chapterId, pageIndex);
+    lastCursorSyncAtRef.current = Date.now();
+  }, []);
+
+  const scheduleSchedulerCursorSync = useCallback((chapterId: string, pageIndex: number) => {
+    if (!chapterId) {
+      return;
+    }
+
+    const normalizedPageIndex = Math.max(0, Math.floor(pageIndex));
+    const elapsed = Date.now() - lastCursorSyncAtRef.current;
+    const canSyncImmediately = elapsed >= CURSOR_SYNC_THROTTLE_MS && !cursorSyncTimerRef.current;
+
+    if (canSyncImmediately) {
+      setSchedulerCursorNow(chapterId, normalizedPageIndex);
+      return;
+    }
+
+    pendingCursorSyncRef.current = {
+      chapterId,
+      pageIndex: normalizedPageIndex,
+    };
+
+    if (cursorSyncTimerRef.current) {
+      return;
+    }
+
+    const waitMs = Math.max(0, CURSOR_SYNC_THROTTLE_MS - elapsed);
+    cursorSyncTimerRef.current = setTimeout(() => {
+      cursorSyncTimerRef.current = null;
+      const pending = pendingCursorSyncRef.current;
+      pendingCursorSyncRef.current = null;
+      if (!pending) {
+        return;
+      }
+      setSchedulerCursorNow(pending.chapterId, pending.pageIndex);
+    }, waitMs);
+  }, [setSchedulerCursorNow]);
 
   // Fetch the master chapter list to know the ordering
   const chaptersQuery = useQuery({
@@ -145,6 +199,16 @@ export default function ReaderScreen() {
   useEffect(() => {
     activeChapterIdsRef.current = activeChapterIds;
   }, [activeChapterIds]);
+
+  useEffect(() => {
+    return () => {
+      if (cursorSyncTimerRef.current) {
+        clearTimeout(cursorSyncTimerRef.current);
+        cursorSyncTimerRef.current = null;
+      }
+      pendingCursorSyncRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     sourceRef.current = { sourceId, mangaId };
@@ -376,6 +440,12 @@ export default function ReaderScreen() {
   useEffect(() => {
     schedulerRef.current?.dispose();
     schedulerRef.current = null;
+    if (cursorSyncTimerRef.current) {
+      clearTimeout(cursorSyncTimerRef.current);
+      cursorSyncTimerRef.current = null;
+    }
+    pendingCursorSyncRef.current = null;
+    lastCursorSyncAtRef.current = 0;
     chapterSwitchTargetRef.current = null;
     setChapterSwitchTargetId(null);
     setEntryChapterId(initialChapterId);
@@ -562,8 +632,8 @@ export default function ReaderScreen() {
     if (!currentOverlayChapterId) {
       return;
     }
-    schedulerRef.current?.setCursor(currentOverlayChapterId, currentOverlayPageIndex);
-  }, [currentOverlayChapterId, currentOverlayPageIndex]);
+    scheduleSchedulerCursorSync(currentOverlayChapterId, currentOverlayPageIndex);
+  }, [currentOverlayChapterId, currentOverlayPageIndex, scheduleSchedulerCursorSync]);
 
   const retryPage = useCallback((pageId: string) => {
     schedulerRef.current?.retryPage(pageId);
@@ -642,13 +712,21 @@ export default function ReaderScreen() {
           const state = schedulerSnapshot.pages[pageId];
           const isReady = state?.status === "ready";
           const isTerminalFailure = state?.status === "error" && state.terminal;
+          const sourceAspectRatio =
+            p.width && p.height && p.width > 0 && p.height > 0
+              ? p.width / p.height
+              : undefined;
+          const decodedAspectRatio =
+            isReady && state.width > 0 && state.height > 0
+              ? state.width / state.height
+              : undefined;
 
           return {
             id: pageId,
             localPath: isReady ? state.localUri : "",
             pageIndex: index,
             chapterId: cId,
-            aspectRatio: isReady ? (state.width / state.height) : ((p.width && p.height) ? p.width / p.height : 1),
+            aspectRatio: sourceAspectRatio ?? decodedAspectRatio ?? 1,
             loadState: isReady ? "ready" : (isTerminalFailure ? "failed" : "loading"),
             errorMessage: isTerminalFailure
               ? (state.statusCode ? `Failed to load page (${state.statusCode}).` : "Failed to load page.")
@@ -792,7 +870,6 @@ export default function ReaderScreen() {
       pageIndex: normalizedPageIndex,
     });
     setCurrentPage(normalizedPageIndex);
-    schedulerRef.current?.setCursor(chapterId, normalizedPageIndex);
   }, [setCurrentPage]);
 
   const handleChapterChanged = useCallback((chapterId: string) => {
@@ -816,9 +893,9 @@ export default function ReaderScreen() {
     }
     const targetPage = Math.floor(pageIndex);
     setCurrentOverlayPageIndex(targetPage);
-    schedulerRef.current?.setCursor(currentOverlayChapterId, targetPage);
+    setSchedulerCursorNow(currentOverlayChapterId, targetPage);
     void nativeReaderRef.current?.seekTo(currentOverlayChapterId, targetPage);
-  }, [currentOverlayChapterId]);
+  }, [currentOverlayChapterId, setSchedulerCursorNow]);
 
   const switchToChapter = useCallback((targetChapterId: string) => {
     if (!targetChapterId || chapterSwitchTargetRef.current) {

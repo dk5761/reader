@@ -61,6 +61,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
   private var chapterMaxPageIndices: [String: Int] = [:]
   private var preloadedChapters: Set<String> = []
+  private var pendingScrollAnchorRestore: ScrollAnchor? = nil
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -164,9 +165,11 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   public func updateData(data: [[String: Any]]) {
+    let previousSnapshotItems = dataSource.snapshot().itemIdentifiers
     let previousItemsById = Dictionary(
-      uniqueKeysWithValues: dataSource.snapshot().itemIdentifiers.map { ($0.id, $0) }
+      uniqueKeysWithValues: previousSnapshotItems.map { ($0.id, $0) }
     )
+    let previousItemIds = previousSnapshotItems.map(\.id)
     let scrollAnchor = captureScrollAnchor()
 
     var snapshot = NSDiffableDataSourceSnapshot<Int, WebtoonPage>()
@@ -224,6 +227,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     snapshot.appendItems(pages)
 
+    let currentItemIds = pages.map(\.id)
+    let hasStructuralChanges = hasStructuralChanges(previousIds: previousItemIds, currentIds: currentItemIds)
+
     let changedItems = pages.filter { page in
       guard let previousPage = previousItemsById[page.id] else {
         return false
@@ -237,6 +243,14 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self = self else { return }
       self.collectionView.layoutIfNeeded()
+      guard hasStructuralChanges else { return }
+      guard let scrollAnchor else { return }
+
+      if self.collectionView.isDragging || self.collectionView.isDecelerating {
+        self.pendingScrollAnchorRestore = scrollAnchor
+        return
+      }
+
       self.restoreScrollAnchor(scrollAnchor)
     }
   }
@@ -450,6 +464,16 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     onScrollBegin([:])
   }
 
+  func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+    if !decelerate {
+      applyPendingScrollAnchorRestoreIfNeeded()
+    }
+  }
+
+  func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    applyPendingScrollAnchorRestoreIfNeeded()
+  }
+
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
     // Intentionally no-op.
     // Prefetch callbacks are predictive and can include pages the user has not reached yet.
@@ -508,6 +532,34 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
         animated: false
       )
     }
+  }
+
+  private func hasStructuralChanges(previousIds: [String], currentIds: [String]) -> Bool {
+    guard previousIds.count == currentIds.count else {
+      return true
+    }
+
+    for (index, previousId) in previousIds.enumerated() {
+      if previousId != currentIds[index] {
+        return true
+      }
+    }
+
+    return false
+  }
+
+  private func applyPendingScrollAnchorRestoreIfNeeded() {
+    guard !collectionView.isDragging, !collectionView.isDecelerating else {
+      return
+    }
+
+    guard let anchor = pendingScrollAnchorRestore else {
+      return
+    }
+
+    pendingScrollAnchorRestore = nil
+    collectionView.layoutIfNeeded()
+    restoreScrollAnchor(anchor)
   }
 }
 
