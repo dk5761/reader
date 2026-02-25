@@ -8,6 +8,7 @@ import {
     OnLoadingStateChangedEventPayload,
     OnPageChangedEventPayload,
     OnRetryRequestedEventPayload,
+    ReaderMagnifierConfig,
     WebtoonPage,
     WebtoonReaderView
 } from '../../../../modules/webtoon-reader';
@@ -22,6 +23,7 @@ export type NativeWebtoonReaderRef = {
 
 type NativeWebtoonReaderProps = {
     data: WebtoonPage[];
+    magnifierConfig?: ReaderMagnifierConfig;
     onEndReached?: (chapterId: string) => void;
     onChapterChanged?: (chapterId: string) => void;
     onSingleTap?: () => void;
@@ -34,6 +36,7 @@ type NativeWebtoonReaderProps = {
 
 export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
     data,
+    magnifierConfig,
     onEndReached,
     onChapterChanged,
     onSingleTap,
@@ -174,6 +177,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 ref={nativeViewRef}
                 style={styles.reader}
                 data={data}
+                magnifierConfig={magnifierConfig}
                 onEndReached={handleEndReached}
                 onChapterChanged={handleChapterChanged}
                 onSingleTap={onSingleTap}

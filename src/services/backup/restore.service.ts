@@ -246,6 +246,10 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
       webtoonBackgroundConcurrency: dataWithoutId.webtoonBackgroundConcurrency ?? 1,
       webtoonChapterPreloadLeadPages:
         dataWithoutId.webtoonChapterPreloadLeadPages ?? 4,
+      readerMagnifierEnabled: dataWithoutId.readerMagnifierEnabled ?? true,
+      readerMagnifierBubbleSize: dataWithoutId.readerMagnifierBubbleSize ?? 180,
+      readerMagnifierZoomScale: dataWithoutId.readerMagnifierZoomScale ?? 2.2,
+      readerMagnifierHoldDurationMs: dataWithoutId.readerMagnifierHoldDurationMs ?? 450,
     };
     db.insert(appSettings)
       .values(normalizedSettings)
@@ -259,6 +263,10 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
           webtoonForegroundConcurrency: normalizedSettings.webtoonForegroundConcurrency,
           webtoonBackgroundConcurrency: normalizedSettings.webtoonBackgroundConcurrency,
           webtoonChapterPreloadLeadPages: normalizedSettings.webtoonChapterPreloadLeadPages,
+          readerMagnifierEnabled: normalizedSettings.readerMagnifierEnabled,
+          readerMagnifierBubbleSize: normalizedSettings.readerMagnifierBubbleSize,
+          readerMagnifierZoomScale: normalizedSettings.readerMagnifierZoomScale,
+          readerMagnifierHoldDurationMs: normalizedSettings.readerMagnifierHoldDurationMs,
           updatedAt: normalizedSettings.updatedAt,
         },
       })

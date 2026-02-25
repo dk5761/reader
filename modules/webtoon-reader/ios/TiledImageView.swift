@@ -225,6 +225,7 @@ class TiledImageView: UIView {
   private var imagePath: String?
   private var currentPath: String?
   private var currentSize: CGSize?
+  private var activeImageSource: SubsampledImageSource?
   private var renderState: RenderState = .idle
   private var placeholderRetryHandler: (() -> Void)?
 
@@ -398,6 +399,7 @@ class TiledImageView: UIView {
 
     tiledLayerView.onTileRenderFailed = { [weak self] in
       guard let self = self else { return }
+      self.activeImageSource = nil
       self.onImageError?("Failed to decode image tiles.")
       self.applyRenderState(.error(message: "Tap retry to try again."))
     }
@@ -411,10 +413,108 @@ class TiledImageView: UIView {
     errorOverlayView.frame = bounds
   }
 
+  var isReadyForMagnifier: Bool {
+    guard case .ready = renderState else {
+      return false
+    }
+    return activeImageSource != nil
+  }
+
+  func magnifierSnapshot(at point: CGPoint, diameter: CGFloat, zoomScale: CGFloat) -> UIImage? {
+    guard isReadyForMagnifier,
+          bounds.width > 0,
+          bounds.height > 0,
+          diameter > 0,
+          zoomScale > 1.0,
+          let source = activeImageSource else {
+      return nil
+    }
+
+    let normalizedX = min(max(point.x / bounds.width, 0), 1)
+    let normalizedY = min(max(point.y / bounds.height, 0), 1)
+    let sourcePoint = CGPoint(
+      x: CGFloat(source.pixelWidth) * normalizedX,
+      y: CGFloat(source.pixelHeight) * normalizedY
+    )
+
+    let cropDiameterInViewPoints = diameter / zoomScale
+    let sourcePixelsPerPointX = CGFloat(source.pixelWidth) / bounds.width
+    let sourcePixelsPerPointY = CGFloat(source.pixelHeight) / bounds.height
+
+    let cropWidth = max(1, cropDiameterInViewPoints * sourcePixelsPerPointX)
+    let cropHeight = max(1, cropDiameterInViewPoints * sourcePixelsPerPointY)
+
+    var cropRect = CGRect(
+      x: sourcePoint.x - cropWidth / 2,
+      y: sourcePoint.y - cropHeight / 2,
+      width: cropWidth,
+      height: cropHeight
+    )
+
+    let sourceBounds = CGRect(
+      x: 0,
+      y: 0,
+      width: CGFloat(source.pixelWidth),
+      height: CGFloat(source.pixelHeight)
+    )
+
+    if cropRect.minX < sourceBounds.minX {
+      cropRect.origin.x = sourceBounds.minX
+    }
+    if cropRect.minY < sourceBounds.minY {
+      cropRect.origin.y = sourceBounds.minY
+    }
+    if cropRect.maxX > sourceBounds.maxX {
+      cropRect.origin.x = sourceBounds.maxX - cropRect.width
+    }
+    if cropRect.maxY > sourceBounds.maxY {
+      cropRect.origin.y = sourceBounds.maxY - cropRect.height
+    }
+
+    cropRect = cropRect.integral.intersection(sourceBounds)
+
+    guard cropRect.width > 0, cropRect.height > 0 else {
+      return nil
+    }
+
+    // Request a source image level appropriate for magnifier rendering.
+    guard let sampledImage = source.image(forScale: max(zoomScale, 1.0)) else {
+      return nil
+    }
+
+    let sampledSourceRect = CGRect(
+      x: 0,
+      y: 0,
+      width: CGFloat(sampledImage.width),
+      height: CGFloat(sampledImage.height)
+    )
+    let scaleX = sampledSourceRect.width / sourceBounds.width
+    let scaleY = sampledSourceRect.height / sourceBounds.height
+    let sampledCropRect = CGRect(
+      x: cropRect.origin.x * scaleX,
+      y: cropRect.origin.y * scaleY,
+      width: cropRect.width * scaleX,
+      height: cropRect.height * scaleY
+    ).integral.intersection(sampledSourceRect)
+
+    guard sampledCropRect.width > 0,
+          sampledCropRect.height > 0,
+          let cropped = sampledImage.cropping(to: sampledCropRect) else {
+      return nil
+    }
+
+    let outputSize = CGSize(width: diameter, height: diameter)
+    let renderer = UIGraphicsImageRenderer(size: outputSize)
+    return renderer.image { _ in
+      UIImage(cgImage: cropped).draw(in: CGRect(origin: .zero, size: outputSize))
+    }
+  }
+
   func clear() {
     imagePath = nil
     currentPath = nil
     currentSize = nil
+    activeImageSource = nil
     placeholderRetryHandler = nil
     proxyImageView.image = nil
     proxyImageView.alpha = 0
@@ -426,6 +526,7 @@ class TiledImageView: UIView {
     imagePath = nil
     currentPath = nil
     currentSize = size
+    activeImageSource = nil
     placeholderRetryHandler = nil
     frame = CGRect(origin: .zero, size: size)
     proxyImageView.frame = CGRect(origin: .zero, size: size)
@@ -446,6 +547,7 @@ class TiledImageView: UIView {
     imagePath = nil
     currentPath = nil
     currentSize = size
+    activeImageSource = nil
     placeholderRetryHandler = allowRetry ? onRetry : nil
     frame = CGRect(origin: .zero, size: size)
     proxyImageView.frame = CGRect(origin: .zero, size: size)
@@ -484,6 +586,7 @@ class TiledImageView: UIView {
 
   private func loadImage(path: String, exactSize: CGSize) {
     imagePath = path
+    activeImageSource = nil
     placeholderRetryHandler = nil
     frame = CGRect(origin: .zero, size: exactSize)
     proxyImageView.frame = CGRect(origin: .zero, size: exactSize)
@@ -501,6 +604,7 @@ class TiledImageView: UIView {
 
       guard !path.isEmpty else {
         DispatchQueue.main.async {
+          self.activeImageSource = nil
           self.applyRenderState(.error(message: "Tap retry to try again."))
           self.onImageError?("Image path is empty.")
         }
@@ -512,6 +616,7 @@ class TiledImageView: UIView {
       guard source != nil else {
         DispatchQueue.main.async {
           guard self.imagePath == path else { return }
+          self.activeImageSource = nil
           self.proxyImageView.image = nil
           self.proxyImageView.alpha = 0
           self.onImageError?("Failed to load image: \(path)")
@@ -524,6 +629,7 @@ class TiledImageView: UIView {
 
       DispatchQueue.main.async {
         guard self.imagePath == path else { return }
+        self.activeImageSource = source
         if let preview {
           self.proxyImageView.image = preview
           self.proxyImageView.alpha = 1

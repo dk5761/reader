@@ -114,6 +114,18 @@ export default function SettingsScreen() {
         <TouchableOpacity
           className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"
           onPress={() => {
+            router.push("/settings/reader-magnifier" as any);
+          }}
+        >
+          <Text className="text-base font-semibold text-white">Reader Magnifier</Text>
+          <Text className="mt-1 text-xs text-[#9B9CA6]">
+            Configure bubble size, zoom, and hold delay for press-and-hold magnification.
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"
+          onPress={() => {
             router.push("/updates");
           }}
         >

@@ -142,6 +142,10 @@ CREATE TABLE IF NOT EXISTS app_settings (
   webtoon_foreground_concurrency INTEGER NOT NULL DEFAULT 1,
   webtoon_background_concurrency INTEGER NOT NULL DEFAULT 1,
   webtoon_chapter_preload_lead_pages INTEGER NOT NULL DEFAULT 4,
+  reader_magnifier_enabled INTEGER NOT NULL DEFAULT 1,
+  reader_magnifier_bubble_size INTEGER NOT NULL DEFAULT 180,
+  reader_magnifier_zoom_scale REAL NOT NULL DEFAULT 2.2,
+  reader_magnifier_hold_duration_ms INTEGER NOT NULL DEFAULT 450,
   updated_at INTEGER NOT NULL
 );
 

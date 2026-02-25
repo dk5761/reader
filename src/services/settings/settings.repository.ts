@@ -33,6 +33,21 @@ const normalizeWebtoonBackgroundConcurrency = (value: number | null | undefined)
 const normalizeWebtoonChapterPreloadLeadPages = (value: number | null | undefined): number =>
   clampInt(value ?? 4, 2, 8);
 
+const normalizeReaderMagnifierEnabled = (value: boolean | number | null | undefined): boolean =>
+  Boolean(value ?? true);
+
+const normalizeReaderMagnifierBubbleSize = (value: number | null | undefined): number =>
+  clampInt(value ?? 180, 120, 280);
+
+const normalizeReaderMagnifierZoomScale = (value: number | null | undefined): number => {
+  const numeric = Number.isFinite(value) ? Number(value) : 2.2;
+  const clamped = Math.max(1.5, Math.min(4.0, numeric));
+  return Math.round(clamped * 100) / 100;
+};
+
+const normalizeReaderMagnifierHoldDurationMs = (value: number | null | undefined): number =>
+  clampInt(value ?? 450, 200, 700);
+
 const normalizeSourceIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -74,6 +89,16 @@ const mapSettings = (params: {
   webtoonChapterPreloadLeadPages: normalizeWebtoonChapterPreloadLeadPages(
     params.appRow.webtoonChapterPreloadLeadPages
   ),
+  readerMagnifierEnabled: normalizeReaderMagnifierEnabled(params.appRow.readerMagnifierEnabled),
+  readerMagnifierBubbleSize: normalizeReaderMagnifierBubbleSize(
+    params.appRow.readerMagnifierBubbleSize
+  ),
+  readerMagnifierZoomScale: normalizeReaderMagnifierZoomScale(
+    params.appRow.readerMagnifierZoomScale
+  ),
+  readerMagnifierHoldDurationMs: normalizeReaderMagnifierHoldDurationMs(
+    params.appRow.readerMagnifierHoldDurationMs
+  ),
   globalSearchSelectedSourceIds: parseSourceIdsJson(params.globalRow.selectedSourceIdsJson),
   updatedAt: Math.max(params.appRow.updatedAt, params.globalRow.updatedAt),
 });
@@ -92,6 +117,10 @@ const ensureAppSettingsRow = (): void => {
       webtoonForegroundConcurrency: 1,
       webtoonBackgroundConcurrency: 1,
       webtoonChapterPreloadLeadPages: 4,
+      readerMagnifierEnabled: true,
+      readerMagnifierBubbleSize: 180,
+      readerMagnifierZoomScale: 2.2,
+      readerMagnifierHoldDurationMs: 450,
       updatedAt: now,
     })
     .onConflictDoNothing({
@@ -171,6 +200,10 @@ export const getAppSettings = (): AppSettings => {
       webtoonForegroundConcurrency: 1,
       webtoonBackgroundConcurrency: 1,
       webtoonChapterPreloadLeadPages: 4,
+      readerMagnifierEnabled: true,
+      readerMagnifierBubbleSize: 180,
+      readerMagnifierZoomScale: 2.2,
+      readerMagnifierHoldDurationMs: 450,
       globalSearchSelectedSourceIds: [],
       updatedAt: fallbackNow,
     };
@@ -206,6 +239,18 @@ export const updateAppSettings = (
       ),
       webtoonChapterPreloadLeadPages: normalizeWebtoonChapterPreloadLeadPages(
         input.webtoonChapterPreloadLeadPages ?? current.webtoonChapterPreloadLeadPages
+      ),
+      readerMagnifierEnabled: normalizeReaderMagnifierEnabled(
+        input.readerMagnifierEnabled ?? current.readerMagnifierEnabled
+      ),
+      readerMagnifierBubbleSize: normalizeReaderMagnifierBubbleSize(
+        input.readerMagnifierBubbleSize ?? current.readerMagnifierBubbleSize
+      ),
+      readerMagnifierZoomScale: normalizeReaderMagnifierZoomScale(
+        input.readerMagnifierZoomScale ?? current.readerMagnifierZoomScale
+      ),
+      readerMagnifierHoldDurationMs: normalizeReaderMagnifierHoldDurationMs(
+        input.readerMagnifierHoldDurationMs ?? current.readerMagnifierHoldDurationMs
       ),
       updatedAt: now,
     })

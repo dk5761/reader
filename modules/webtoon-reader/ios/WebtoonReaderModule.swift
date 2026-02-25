@@ -10,6 +10,10 @@ public class WebtoonReaderModule: Module {
         view.updateData(data: data)
       }
 
+      Prop("magnifierConfig") { (view: WebtoonReaderView, config: [String: Any]?) in
+        view.updateMagnifierConfig(config: config)
+      }
+
       Events(
         "onEndReached",
         "onChapterChanged",

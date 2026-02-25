@@ -73,6 +73,10 @@ export default function RootLayout() {
                           options={{ headerShown: false }}
                         />
                         <Stack.Screen
+                          name="settings/reader-magnifier"
+                          options={{ headerShown: false }}
+                        />
+                        <Stack.Screen
                           name="reader/[sourceId]/[mangaId]/[chapterId]"
                           options={{ headerShown: false }}
                         />

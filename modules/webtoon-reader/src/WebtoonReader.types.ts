@@ -41,8 +41,16 @@ export type OnRetryRequestedEventPayload = {
   pageId: string;
 };
 
+export type ReaderMagnifierConfig = {
+  enabled: boolean;
+  bubbleSize: number;
+  zoomScale: number;
+  holdDurationMs: number;
+};
+
 export type WebtoonReaderViewProps = {
   data: WebtoonPage[];
+  magnifierConfig?: ReaderMagnifierConfig;
   onEndReached?: (event: { nativeEvent: OnEndReachedEventPayload }) => void;
   onChapterChanged?: (event: { nativeEvent: OnChapterChangedEventPayload }) => void;
   onSingleTap?: () => void;

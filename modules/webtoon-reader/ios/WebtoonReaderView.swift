@@ -37,8 +37,47 @@ struct WebtoonPage: Hashable {
 }
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
+  private struct MagnifierConfig {
+    var enabled: Bool = true
+    var bubbleSize: CGFloat = 180
+    var zoomScale: CGFloat = 2.2
+    var holdDurationMs: Double = 450
+
+    static let bubbleSizeRange: ClosedRange<CGFloat> = 120...280
+    static let zoomScaleRange: ClosedRange<CGFloat> = 1.5...4.0
+    static let holdDurationRangeMs: ClosedRange<Double> = 200...700
+
+    static let `default` = MagnifierConfig()
+
+    static func from(config: [String: Any]?) -> MagnifierConfig {
+      guard let config else {
+        return .default
+      }
+
+      var resolved = MagnifierConfig.default
+      if let enabled = config["enabled"] as? Bool {
+        resolved.enabled = enabled
+      }
+      if let bubbleSize = config["bubbleSize"] as? Double {
+        let normalizedBubbleSize = CGFloat(bubbleSize)
+        resolved.bubbleSize = min(
+          max(normalizedBubbleSize, bubbleSizeRange.lowerBound),
+          bubbleSizeRange.upperBound
+        )
+      }
+      if let zoomScale = config["zoomScale"] as? Double {
+        resolved.zoomScale = min(max(CGFloat(zoomScale), zoomScaleRange.lowerBound), zoomScaleRange.upperBound)
+      }
+      if let holdDurationMs = config["holdDurationMs"] as? Double {
+        resolved.holdDurationMs = min(max(holdDurationMs, holdDurationRangeMs.lowerBound), holdDurationRangeMs.upperBound)
+      }
+      return resolved
+    }
+  }
+
   private let preloadLeadPages = 4
   private let pendingAnchorMaxAgeSeconds: TimeInterval = 2.0
+  private let magnifierUpdateInterval: CFTimeInterval = 1.0 / 30.0
 
   private enum StructuralChangeClass: String {
     case none = "none"
@@ -73,6 +112,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
+  private var longPressMagnifierGesture: UILongPressGestureRecognizer!
+  private let magnifierBubbleView = MagnifierBubbleView()
+  private var magnifierConfig: MagnifierConfig = .default
+  private var isMagnifierActive = false
+  private var didDisableCollectionScrollForMagnifier = false
+  private var lastMagnifierRefreshAt: CFTimeInterval = 0
 
   private var lastEmittedChapterId: String? = nil
   private var lastEmittedPageId: String? = nil
@@ -113,15 +158,28 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     doubleTapBlocker.numberOfTapsRequired = 2
     doubleTapBlocker.cancelsTouchesInView = false
 
+    longPressMagnifierGesture = UILongPressGestureRecognizer(
+      target: self,
+      action: #selector(handleMagnifierLongPress(_:))
+    )
+    longPressMagnifierGesture.minimumPressDuration = magnifierConfig.holdDurationMs / 1000.0
+    longPressMagnifierGesture.cancelsTouchesInView = false
+    longPressMagnifierGesture.allowableMovement = 24
+
     singleTapGesture.require(toFail: doubleTapBlocker)
+    singleTapGesture.require(toFail: longPressMagnifierGesture)
 
     collectionView.addGestureRecognizer(singleTapGesture)
     collectionView.addGestureRecognizer(doubleTapBlocker)
+    collectionView.addGestureRecognizer(longPressMagnifierGesture)
 
     addSubview(collectionView)
+    magnifierBubbleView.isHidden = true
+    addSubview(magnifierBubbleView)
   }
 
   @objc private func handleSingleTap(_ gesture: UITapGestureRecognizer) {
+    guard !isMagnifierActive else { return }
     guard gesture.state == .ended else { return }
     guard !collectionView.isDragging, !collectionView.isDecelerating else { return }
 
@@ -181,9 +239,127 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
         layout.invalidateLayout()
       }
     }
+    bringSubviewToFront(magnifierBubbleView)
+  }
+
+  public func updateMagnifierConfig(config: [String: Any]?) {
+    magnifierConfig = MagnifierConfig.from(config: config)
+    longPressMagnifierGesture?.minimumPressDuration = magnifierConfig.holdDurationMs / 1000.0
+    if !magnifierConfig.enabled {
+      stopMagnifier()
+    }
+  }
+
+  @objc private func handleMagnifierLongPress(_ gesture: UILongPressGestureRecognizer) {
+    guard magnifierConfig.enabled else {
+      stopMagnifier()
+      return
+    }
+
+    let location = gesture.location(in: collectionView)
+
+    switch gesture.state {
+    case .began:
+      _ = startOrUpdateMagnifier(at: location, forceRefresh: true)
+    case .changed:
+      guard isMagnifierActive else { return }
+      let updated = startOrUpdateMagnifier(at: location, forceRefresh: false)
+      if !updated {
+        stopMagnifier()
+      }
+    case .ended, .cancelled, .failed:
+      stopMagnifier()
+    default:
+      break
+    }
+  }
+
+  private func startOrUpdateMagnifier(at location: CGPoint, forceRefresh: Bool) -> Bool {
+    guard let indexPath = collectionView.indexPathForItem(at: location),
+          let page = dataSource.itemIdentifier(for: indexPath),
+          !page.isTransition,
+          let cell = collectionView.cellForItem(at: indexPath) as? WebtoonPageCell,
+          cell.isReadyForMagnifier else {
+      return false
+    }
+
+    let pointInCell = collectionView.convert(location, to: cell)
+    let now = CACurrentMediaTime()
+    let shouldRefreshImage = forceRefresh || (now - lastMagnifierRefreshAt >= magnifierUpdateInterval)
+    var snapshot: UIImage?
+
+    if shouldRefreshImage {
+      snapshot = cell.magnifierSnapshot(
+        at: pointInCell,
+        diameter: magnifierConfig.bubbleSize,
+        zoomScale: magnifierConfig.zoomScale
+      )
+      lastMagnifierRefreshAt = now
+      guard snapshot != nil else {
+        return false
+      }
+    }
+
+    if !isMagnifierActive {
+      isMagnifierActive = true
+      if collectionView.isScrollEnabled {
+        collectionView.isScrollEnabled = false
+        didDisableCollectionScrollForMagnifier = true
+      } else {
+        didDisableCollectionScrollForMagnifier = false
+      }
+    }
+
+    let frame = magnifierFrame(forTouchLocation: location)
+    magnifierBubbleView.setDiameter(magnifierConfig.bubbleSize)
+    magnifierBubbleView.frame = frame
+    if let snapshot {
+      magnifierBubbleView.update(image: snapshot)
+    }
+    magnifierBubbleView.isHidden = false
+    bringSubviewToFront(magnifierBubbleView)
+
+    return true
+  }
+
+  private func stopMagnifier() {
+    guard isMagnifierActive || !magnifierBubbleView.isHidden else {
+      return
+    }
+
+    isMagnifierActive = false
+    lastMagnifierRefreshAt = 0
+    magnifierBubbleView.reset()
+    magnifierBubbleView.isHidden = true
+
+    if didDisableCollectionScrollForMagnifier {
+      collectionView.isScrollEnabled = true
+      didDisableCollectionScrollForMagnifier = false
+    }
+  }
+
+  private func magnifierFrame(forTouchLocation location: CGPoint) -> CGRect {
+    let diameter = magnifierConfig.bubbleSize
+    let edgeInset: CGFloat = 8
+    let verticalSpacing: CGFloat = 26
+
+    var originX = location.x - (diameter / 2)
+    originX = min(max(originX, edgeInset), bounds.width - diameter - edgeInset)
+
+    var originY = location.y + verticalSpacing
+    if originY + diameter + edgeInset > bounds.height {
+      originY = location.y - diameter - verticalSpacing
+    }
+    originY = min(max(originY, edgeInset), bounds.height - diameter - edgeInset)
+
+    return CGRect(x: originX, y: originY, width: diameter, height: diameter)
   }
 
   public func updateData(data: [[String: Any]]) {
+    if isMagnifierActive {
+      stopMagnifier()
+    }
+
     let previousSnapshotItems = dataSource.snapshot().itemIdentifiers
     let previousItemsById = Dictionary(
       uniqueKeysWithValues: previousSnapshotItems.map { ($0.id, $0) }
@@ -296,6 +472,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   public func resetSession() {
+    stopMagnifier()
     sessionGeneration &+= 1
     preloadedChapters.removeAll()
     chapterMaxPageIndices.removeAll()
@@ -506,6 +683,10 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   func scrollViewDidScroll(_ scrollView: UIScrollView) {
+    if isMagnifierActive {
+      return
+    }
+
     let indexPaths = collectionView.indexPathsForVisibleItems
 
     guard let page = primaryVisiblePage(from: indexPaths) else {
@@ -518,6 +699,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    if isMagnifierActive {
+      stopMagnifier()
+    }
     onScrollBegin([:])
   }
 
@@ -741,3 +925,63 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
 // Flow-layout conformance is required so `sizeForItemAt` above is used by `UICollectionViewFlowLayout`.
 extension WebtoonReaderView: UICollectionViewDelegateFlowLayout { }
+
+final class MagnifierBubbleView: UIView {
+  private let imageView: UIImageView = {
+    let imageView = UIImageView()
+    imageView.contentMode = .scaleToFill
+    imageView.clipsToBounds = true
+    return imageView
+  }()
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    setup()
+  }
+
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    setup()
+  }
+
+  private func setup() {
+    backgroundColor = UIColor(white: 0.08, alpha: 0.95)
+    isUserInteractionEnabled = false
+    layer.borderWidth = 2
+    layer.borderColor = UIColor(white: 1.0, alpha: 0.18).cgColor
+    layer.shadowColor = UIColor.black.cgColor
+    layer.shadowOpacity = 0.35
+    layer.shadowOffset = CGSize(width: 0, height: 5)
+    layer.shadowRadius = 10
+
+    addSubview(imageView)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    imageView.frame = bounds
+    layer.cornerRadius = bounds.width / 2
+    imageView.layer.cornerRadius = layer.cornerRadius
+    layer.shadowPath = UIBezierPath(ovalIn: bounds).cgPath
+  }
+
+  func setDiameter(_ diameter: CGFloat) {
+    guard diameter > 0 else { return }
+    if bounds.width == diameter && bounds.height == diameter {
+      return
+    }
+
+    let centerPoint = center
+    bounds = CGRect(x: 0, y: 0, width: diameter, height: diameter)
+    center = centerPoint
+    setNeedsLayout()
+  }
+
+  func update(image: UIImage) {
+    imageView.image = image
+  }
+
+  func reset() {
+    imageView.image = nil
+  }
+}

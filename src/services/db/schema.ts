@@ -161,6 +161,18 @@ export const appSettings = sqliteTable("app_settings", {
   webtoonChapterPreloadLeadPages: integer("webtoon_chapter_preload_lead_pages")
     .notNull()
     .default(4),
+  readerMagnifierEnabled: integer("reader_magnifier_enabled", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  readerMagnifierBubbleSize: integer("reader_magnifier_bubble_size")
+    .notNull()
+    .default(180),
+  readerMagnifierZoomScale: real("reader_magnifier_zoom_scale")
+    .notNull()
+    .default(2.2),
+  readerMagnifierHoldDurationMs: integer("reader_magnifier_hold_duration_ms")
+    .notNull()
+    .default(450),
   updatedAt: integer("updated_at").notNull(),
 });
 

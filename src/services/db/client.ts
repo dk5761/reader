@@ -186,6 +186,22 @@ const ensureAppSettingsColumns = (): void => {
       name: "webtoon_chapter_preload_lead_pages",
       sql: "ALTER TABLE app_settings ADD COLUMN webtoon_chapter_preload_lead_pages INTEGER NOT NULL DEFAULT 4",
     },
+    {
+      name: "reader_magnifier_enabled",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_enabled INTEGER NOT NULL DEFAULT 1",
+    },
+    {
+      name: "reader_magnifier_bubble_size",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_bubble_size INTEGER NOT NULL DEFAULT 180",
+    },
+    {
+      name: "reader_magnifier_zoom_scale",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_zoom_scale REAL NOT NULL DEFAULT 2.2",
+    },
+    {
+      name: "reader_magnifier_hold_duration_ms",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_hold_duration_ms INTEGER NOT NULL DEFAULT 450",
+    },
   ];
 
   sqliteDatabase.withTransactionSync(() => {

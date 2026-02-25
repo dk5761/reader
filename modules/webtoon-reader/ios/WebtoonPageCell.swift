@@ -12,6 +12,10 @@ class WebtoonPageCell: UICollectionViewCell {
   var onImageError: ((_ pageId: String, _ error: String) -> Void)?
   var onRetryRequested: ((_ pageId: String) -> Void)?
 
+  var isReadyForMagnifier: Bool {
+    tiledImageView.isReadyForMagnifier
+  }
+
   var shouldSuppressReaderTap: Bool {
     if scrollView.isDragging || scrollView.isDecelerating || scrollView.isZooming {
       return true
@@ -151,6 +155,15 @@ class WebtoonPageCell: UICollectionViewCell {
   func resetZoom(animated: Bool) {
     scrollView.setZoomScale(1.0, animated: animated)
     scrollView.isScrollEnabled = false
+  }
+
+  func magnifierSnapshot(at pointInCell: CGPoint, diameter: CGFloat, zoomScale: CGFloat) -> UIImage? {
+    let pointInTiledImage = contentView.convert(pointInCell, to: tiledImageView)
+    return tiledImageView.magnifierSnapshot(
+      at: pointInTiledImage,
+      diameter: diameter,
+      zoomScale: zoomScale
+    )
   }
 }
 

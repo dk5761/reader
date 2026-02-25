@@ -8,6 +8,10 @@ export interface AppSettings {
   webtoonForegroundConcurrency: number;
   webtoonBackgroundConcurrency: number;
   webtoonChapterPreloadLeadPages: number;
+  readerMagnifierEnabled: boolean;
+  readerMagnifierBubbleSize: number;
+  readerMagnifierZoomScale: number;
+  readerMagnifierHoldDurationMs: number;
   globalSearchSelectedSourceIds: string[];
   updatedAt: number;
 }
@@ -20,5 +24,9 @@ export interface UpdateAppSettingsInput {
   webtoonForegroundConcurrency?: number;
   webtoonBackgroundConcurrency?: number;
   webtoonChapterPreloadLeadPages?: number;
+  readerMagnifierEnabled?: boolean;
+  readerMagnifierBubbleSize?: number;
+  readerMagnifierZoomScale?: number;
+  readerMagnifierHoldDurationMs?: number;
   globalSearchSelectedSourceIds?: string[];
 }

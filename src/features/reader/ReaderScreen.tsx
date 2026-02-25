@@ -1048,6 +1048,12 @@ export default function ReaderScreen() {
 
   // Find total pages for the currently focused chapter by checking its data array
   const activeChapterTotalPages = activeOverlayChapterQuery?.data?.length || 0;
+  const magnifierConfig = {
+    enabled: settingsQuery.data?.readerMagnifierEnabled ?? true,
+    bubbleSize: settingsQuery.data?.readerMagnifierBubbleSize ?? 180,
+    zoomScale: settingsQuery.data?.readerMagnifierZoomScale ?? 2.2,
+    holdDurationMs: settingsQuery.data?.readerMagnifierHoldDurationMs ?? 450,
+  };
 
   return (
     <View style={styles.container}>
@@ -1055,6 +1061,7 @@ export default function ReaderScreen() {
       <NativeWebtoonReader
         ref={nativeReaderRef}
         data={sessionReady ? combinedData : []}
+        magnifierConfig={magnifierConfig}
         onEndReached={handleEndReached}
         onChapterChanged={handleChapterChanged}
         onSingleTap={toggleOverlay}
