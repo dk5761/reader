@@ -40,9 +40,28 @@ export class DownloadError extends Error {
     }
 }
 
+export type TrimCacheOptions = {
+    maxBytes?: number;
+    keepChapterIds?: string[];
+    keepRecentChapters?: number;
+};
+
+type CacheFileEntry = {
+    path: string;
+    chapterHash: string;
+    size: number;
+    modificationTime: number;
+};
+
 class ImageDownloadManager {
     private cacheDir = `${(FileSystem as any).cacheDirectory || (FileSystem as any).documentDirectory}webtoon_reader_cache/`;
     private activeDownloads = new Map<string, Promise<DownloadedPage>>();
+    private activeDownloadCounts = new Map<string, number>();
+    private chapterEvictionEpoch = new Map<string, number>();
+    private chapterEvictions = new Map<string, Promise<void>>();
+    private trimPromise: Promise<void> | null = null;
+    private readonly defaultMaxCacheBytes = 600 * 1024 * 1024;
+    private readonly defaultKeepRecentChapters = 10;
     private _initPromise: Promise<void>;
 
     constructor() {
@@ -82,6 +101,33 @@ class ImageDownloadManager {
                 (hash << 24);
         }
         return (hash >>> 0).toString(36);
+    }
+
+    private getChapterHash(chapterId: string): string {
+        return this.hashString(chapterId);
+    }
+
+    private getChapterEpoch(chapterId: string): number {
+        return this.chapterEvictionEpoch.get(chapterId) ?? 0;
+    }
+
+    private bumpChapterEpoch(chapterId: string): number {
+        const next = this.getChapterEpoch(chapterId) + 1;
+        this.chapterEvictionEpoch.set(chapterId, next);
+        return next;
+    }
+
+    private beginChapterDownload(chapterId: string) {
+        this.activeDownloadCounts.set(chapterId, (this.activeDownloadCounts.get(chapterId) ?? 0) + 1);
+    }
+
+    private endChapterDownload(chapterId: string) {
+        const next = (this.activeDownloadCounts.get(chapterId) ?? 0) - 1;
+        if (next <= 0) {
+            this.activeDownloadCounts.delete(chapterId);
+            return;
+        }
+        this.activeDownloadCounts.set(chapterId, next);
     }
 
     private isRetriableHttpStatus(status: number): boolean {
@@ -153,12 +199,14 @@ class ImageDownloadManager {
     ): Promise<DownloadedPage> {
         await this._initPromise;
         const cacheKey = `${chapterId}_${url}`;
+        const chapterEpochAtStart = this.getChapterEpoch(chapterId);
 
         if (this.activeDownloads.has(cacheKey)) {
             return this.activeDownloads.get(cacheKey)!;
         }
 
-        const downloadPromise = this._executeDownload(chapterId, url, headers);
+        this.beginChapterDownload(chapterId);
+        const downloadPromise = this._executeDownload(chapterId, url, headers, chapterEpochAtStart);
         this.activeDownloads.set(cacheKey, downloadPromise);
 
         try {
@@ -167,13 +215,27 @@ class ImageDownloadManager {
         } finally {
             // Remove from active downloads once complete
             this.activeDownloads.delete(cacheKey);
+            this.endChapterDownload(chapterId);
         }
+    }
+
+    private async ensureDownloadStillValid(chapterId: string, chapterEpochAtStart: number, localUri: string) {
+        if (this.getChapterEpoch(chapterId) === chapterEpochAtStart) {
+            return;
+        }
+
+        await FileSystem.deleteAsync(localUri, { idempotent: true });
+        throw new DownloadError("Download invalidated by chapter eviction", {
+            retriable: false,
+            code: "filesystem",
+        });
     }
 
     private async _executeDownload(
         chapterId: string,
         url: string,
-        headers?: Record<string, string>
+        headers: Record<string, string> | undefined,
+        chapterEpochAtStart: number
     ): Promise<DownloadedPage> {
         await this._initPromise;
         const localUri = this.getLocalFilePath(chapterId, url);
@@ -182,6 +244,7 @@ class ImageDownloadManager {
         if (fileInfo.exists) {
             try {
                 const dimensions = await this.measureImageDimensions(localUri);
+                await this.ensureDownloadStillValid(chapterId, chapterEpochAtStart, localUri);
                 return {
                     originalUrl: url,
                     localUri,
@@ -209,6 +272,7 @@ class ImageDownloadManager {
             }
 
             const dimensions = await this.measureImageDimensions(result.uri);
+            await this.ensureDownloadStillValid(chapterId, chapterEpochAtStart, result.uri);
 
             return {
                 originalUrl: url,
@@ -240,8 +304,25 @@ class ImageDownloadManager {
      * Cleans up entire chapters from the disk cache to free memory.
      */
     public async evictChapter(chapterId: string) {
+        await this._initPromise;
+
+        const existing = this.chapterEvictions.get(chapterId);
+        if (existing) {
+            await existing;
+            return;
+        }
+
+        const evictionPromise = this._evictChapter(chapterId).finally(() => {
+            this.chapterEvictions.delete(chapterId);
+        });
+        this.chapterEvictions.set(chapterId, evictionPromise);
+        await evictionPromise;
+    }
+
+    private async _evictChapter(chapterId: string) {
+        this.bumpChapterEpoch(chapterId);
         try {
-            const chapterHash = this.hashString(chapterId);
+            const chapterHash = this.getChapterHash(chapterId);
             const files = await FileSystem.readDirectoryAsync(this.cacheDir);
             const chapterFiles = files.filter(f => f.startsWith(`${chapterHash}_`));
 
@@ -251,6 +332,174 @@ class ImageDownloadManager {
             console.log(`[ImageDownloadManager] Evicted ${chapterFiles.length} files for chapter ${chapterId}`);
         } catch (e) {
             console.error(`[ImageDownloadManager] Failed to evict chapter ${chapterId}`, e);
+        }
+    }
+
+    private async listCacheEntries(): Promise<CacheFileEntry[]> {
+        await this._initPromise;
+        let files: string[] = [];
+        try {
+            files = await FileSystem.readDirectoryAsync(this.cacheDir);
+        } catch {
+            return [];
+        }
+
+        const entries = await Promise.all(
+            files.map(async (name): Promise<CacheFileEntry | null> => {
+                const separatorIdx = name.indexOf("_");
+                if (separatorIdx <= 0) {
+                    return null;
+                }
+
+                const chapterHash = name.slice(0, separatorIdx);
+                const path = `${this.cacheDir}${name}`;
+                const info = await FileSystem.getInfoAsync(path);
+                if (!info.exists || (info as any).isDirectory) {
+                    return null;
+                }
+
+                const size = typeof (info as any).size === "number" ? Number((info as any).size) : 0;
+                const modificationTime =
+                    typeof (info as any).modificationTime === "number"
+                        ? Number((info as any).modificationTime)
+                        : 0;
+
+                return {
+                    path,
+                    chapterHash,
+                    size: Number.isFinite(size) ? size : 0,
+                    modificationTime: Number.isFinite(modificationTime) ? modificationTime : 0,
+                };
+            })
+        );
+
+        return entries.filter((entry): entry is CacheFileEntry => entry !== null);
+    }
+
+    public async trimCache(options: TrimCacheOptions = {}) {
+        await this._initPromise;
+
+        if (this.trimPromise) {
+            await this.trimPromise;
+            return;
+        }
+
+        const run = this._trimCache(options).finally(() => {
+            if (this.trimPromise === run) {
+                this.trimPromise = null;
+            }
+        });
+
+        this.trimPromise = run;
+        await run;
+    }
+
+    private async _trimCache(options: TrimCacheOptions) {
+        const maxBytes = Math.max(0, Math.floor(options.maxBytes ?? this.defaultMaxCacheBytes));
+        const keepRecentChapters = Math.max(
+            0,
+            Math.floor(options.keepRecentChapters ?? this.defaultKeepRecentChapters)
+        );
+
+        const entries = await this.listCacheEntries();
+        if (entries.length === 0) {
+            return;
+        }
+
+        let totalBytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+        if (totalBytes <= maxBytes) {
+            return;
+        }
+
+        const protectedChapterHashes = new Set<string>(
+            (options.keepChapterIds ?? [])
+                .filter((chapterId): chapterId is string => typeof chapterId === "string" && chapterId.length > 0)
+                .map((chapterId) => this.getChapterHash(chapterId))
+        );
+
+        for (const chapterId of this.activeDownloadCounts.keys()) {
+            protectedChapterHashes.add(this.getChapterHash(chapterId));
+        }
+
+        const chapters = new Map<
+            string,
+            { files: CacheFileEntry[]; totalSize: number; latestModificationTime: number }
+        >();
+
+        for (const entry of entries) {
+            const existing = chapters.get(entry.chapterHash);
+            if (!existing) {
+                chapters.set(entry.chapterHash, {
+                    files: [entry],
+                    totalSize: entry.size,
+                    latestModificationTime: entry.modificationTime,
+                });
+                continue;
+            }
+
+            existing.files.push(entry);
+            existing.totalSize += entry.size;
+            existing.latestModificationTime = Math.max(existing.latestModificationTime, entry.modificationTime);
+        }
+
+        const chapterGroups = Array.from(chapters.entries()).map(([chapterHash, value]) => ({
+            chapterHash,
+            ...value,
+        }));
+
+        const recentChapterHashes = new Set<string>();
+        chapterGroups
+            .slice()
+            .sort((a, b) => b.latestModificationTime - a.latestModificationTime)
+            .slice(0, keepRecentChapters)
+            .forEach((group) => recentChapterHashes.add(group.chapterHash));
+
+        const primaryEvictionCandidates = chapterGroups
+            .filter((group) => !protectedChapterHashes.has(group.chapterHash) && !recentChapterHashes.has(group.chapterHash))
+            .sort((a, b) => a.latestModificationTime - b.latestModificationTime);
+
+        const secondaryEvictionCandidates = chapterGroups
+            .filter((group) => !protectedChapterHashes.has(group.chapterHash) && recentChapterHashes.has(group.chapterHash))
+            .sort((a, b) => a.latestModificationTime - b.latestModificationTime);
+
+        let evictedBytes = 0;
+        let evictedFiles = 0;
+        let evictedChapters = 0;
+
+        for (const group of primaryEvictionCandidates) {
+            if (totalBytes <= maxBytes) {
+                break;
+            }
+
+            await Promise.all(
+                group.files.map((entry) => FileSystem.deleteAsync(entry.path, { idempotent: true }))
+            );
+            totalBytes -= group.totalSize;
+            evictedBytes += group.totalSize;
+            evictedFiles += group.files.length;
+            evictedChapters += 1;
+        }
+
+        // If the retained recent set itself exceeds budget, evict oldest recent chapters
+        // except chapters explicitly protected by current reader context/in-flight downloads.
+        for (const group of secondaryEvictionCandidates) {
+            if (totalBytes <= maxBytes) {
+                break;
+            }
+
+            await Promise.all(
+                group.files.map((entry) => FileSystem.deleteAsync(entry.path, { idempotent: true }))
+            );
+            totalBytes -= group.totalSize;
+            evictedBytes += group.totalSize;
+            evictedFiles += group.files.length;
+            evictedChapters += 1;
+        }
+
+        if (evictedChapters > 0) {
+            console.log(
+                `[ImageDownloadManager] Trimmed cache by ${evictedBytes} bytes (${evictedFiles} files, ${evictedChapters} chapters). Remaining: ${totalBytes} bytes`
+            );
         }
     }
 

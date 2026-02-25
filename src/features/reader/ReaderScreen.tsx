@@ -20,6 +20,8 @@ import { appSettingsQueryOptions } from "@/features/settings/api";
 
 const MAX_VISITED_CHAPTERS = 3;
 const CURSOR_SYNC_THROTTLE_MS = 90;
+const READER_CACHE_MAX_BYTES = 600 * 1024 * 1024;
+const READER_CACHE_KEEP_RECENT_CHAPTERS = 10;
 
 export default function ReaderScreen() {
   const queryClient = useQueryClient();
@@ -83,6 +85,7 @@ export default function ReaderScreen() {
   const pendingCursorSyncRef = useRef<{ chapterId: string; pageIndex: number } | null>(null);
   const cursorSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeChapterIdsRef = useRef<string[]>([initialChapterId]);
+  const previousActiveChapterIdsRef = useRef<string[]>([initialChapterId]);
   const sourceRef = useRef<{ sourceId: string; mangaId: string }>({ sourceId, mangaId });
   const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
     if (typeof __DEV__ !== "undefined" && __DEV__) {
@@ -374,14 +377,37 @@ export default function ReaderScreen() {
   );
 
   const handleEvictChapters = useCallback((chapterIds: string[]) => {
-    if (chapterIds.length === 0) {
+    const uniqueChapterIds = Array.from(
+      new Set(chapterIds.filter((chapterId) => typeof chapterId === "string" && chapterId.length > 0))
+    );
+
+    void Promise.allSettled(
+      uniqueChapterIds.map((chapterId) => imageDownloadManager.evictChapter(chapterId))
+    ).then(() => {
+      return imageDownloadManager.trimCache({
+        maxBytes: READER_CACHE_MAX_BYTES,
+        keepChapterIds: activeChapterIdsRef.current.filter(Boolean),
+        keepRecentChapters: READER_CACHE_KEEP_RECENT_CHAPTERS,
+      });
+    }).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    const previous = previousActiveChapterIdsRef.current;
+    previousActiveChapterIdsRef.current = activeChapterIds;
+
+    if (previous.length === 0) {
       return;
     }
 
-    chapterIds.forEach((chapterId) => {
-      imageDownloadManager.evictChapter(chapterId).catch(console.error);
-    });
-  }, []);
+    const nextSet = new Set(activeChapterIds);
+    const removedChapterIds = previous.filter((chapterId) => !nextSet.has(chapterId));
+    if (removedChapterIds.length === 0) {
+      return;
+    }
+
+    handleEvictChapters(removedChapterIds);
+  }, [activeChapterIds, handleEvictChapters]);
 
   useEffect(() => {
     const scheduler = new PageDownloadScheduler(
@@ -478,6 +504,11 @@ export default function ReaderScreen() {
       initialChapterId,
       initialPage,
     });
+    void imageDownloadManager.trimCache({
+      maxBytes: READER_CACHE_MAX_BYTES,
+      keepChapterIds: initialChapterId ? [initialChapterId] : [],
+      keepRecentChapters: READER_CACHE_KEEP_RECENT_CHAPTERS,
+    });
     setSessionReady(true);
   }, [
     debugLog,
@@ -515,6 +546,12 @@ export default function ReaderScreen() {
           queryKey: sourceQueryFactory.chapterPages(currentSourceId, chapterId),
         });
       });
+
+      void imageDownloadManager.trimCache({
+        maxBytes: READER_CACHE_MAX_BYTES,
+        keepChapterIds: [],
+        keepRecentChapters: READER_CACHE_KEEP_RECENT_CHAPTERS,
+      }).catch(console.error);
     };
   }, [debugLog, queryClient]);
 
@@ -837,9 +874,6 @@ export default function ReaderScreen() {
         });
 
         setActiveChapterIds(nextIds);
-        prunedIds.forEach((chapterId) => {
-          imageDownloadManager.evictChapter(chapterId).catch(console.error);
-        });
       }
     }
   }, [chaptersQuery.data, currentOverlayChapterId, debugLog, pruneOldestChapters]);
