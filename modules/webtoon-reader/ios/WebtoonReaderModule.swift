@@ -36,6 +36,10 @@ public class WebtoonReaderModule: Module {
       AsyncFunction("resetZoom") { (view: WebtoonReaderView) in
         view.resetZoom()
       }
+
+      AsyncFunction("resetSession") { (view: WebtoonReaderView) in
+        view.resetSession()
+      }
     }
   }
 }

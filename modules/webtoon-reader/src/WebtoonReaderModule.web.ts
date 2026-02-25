@@ -16,6 +16,10 @@ class WebtoonReaderModule extends NativeModule<Record<string, never>> {
   async resetZoom(_viewRef: any): Promise<void> {
     return;
   }
+
+  async resetSession(_viewRef: any): Promise<void> {
+    return;
+  }
 }
 
 export default registerWebModule(WebtoonReaderModule, 'WebtoonReaderModule');

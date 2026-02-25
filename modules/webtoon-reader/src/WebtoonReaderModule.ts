@@ -5,6 +5,7 @@ declare class WebtoonReaderModule extends NativeModule<Record<string, never>> {
   getCurrentPosition(viewRef: any): Promise<{ chapterId: string; pageIndex: number }>;
   setZoomScale(viewRef: any, scale: number): Promise<void>;
   resetZoom(viewRef: any): Promise<void>;
+  resetSession(viewRef: any): Promise<void>;
 }
 
 // This call loads the native module object from the JSI.

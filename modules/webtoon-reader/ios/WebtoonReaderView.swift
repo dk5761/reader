@@ -38,6 +38,7 @@ struct WebtoonPage: Hashable {
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
   private let preloadLeadPages = 4
+  private let pendingAnchorMaxAgeSeconds: TimeInterval = 2.0
 
   private enum StructuralChangeClass: String {
     case none = "none"
@@ -76,6 +77,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   private var lastEmittedChapterId: String? = nil
   private var lastEmittedPageId: String? = nil
 
+  private var sessionGeneration: Int = 0
   private var chapterMaxPageIndices: [String: Int] = [:]
   private var preloadedChapters: Set<String> = []
   private var pendingScrollAnchorRestore: PendingScrollAnchorRestore? = nil
@@ -226,11 +228,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       currentChapterMaxPageIndices[page.chapterId] = max(existingMax, page.pageIndex)
     }
 
-    let previousChapterSet = Set(chapterMaxPageIndices.keys)
     let currentChapterSet = Set(currentChapterMaxPageIndices.keys)
-    if previousChapterSet != currentChapterSet {
-      preloadedChapters = preloadedChapters.intersection(currentChapterSet)
-    }
     chapterMaxPageIndices = currentChapterMaxPageIndices
 
     let currentPageIds = Set(pages.map(\.id))
@@ -267,8 +265,13 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       snapshot.reloadItems(changedItems)
     }
 
+    let applyGeneration = sessionGeneration
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self = self else { return }
+      guard self.sessionGeneration == applyGeneration else {
+        self.logAnchor("skip stale apply completion generation=\(applyGeneration) current=\(self.sessionGeneration)")
+        return
+      }
       self.collectionView.layoutIfNeeded()
       guard shouldAttemptAnchorRestore else { return }
       guard let scrollAnchor else { return }
@@ -292,6 +295,16 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
   }
 
+  public func resetSession() {
+    sessionGeneration &+= 1
+    preloadedChapters.removeAll()
+    chapterMaxPageIndices.removeAll()
+    lastEmittedPageId = nil
+    lastEmittedChapterId = nil
+    pendingScrollAnchorRestore = nil
+    logAnchor("resetSession generation=\(sessionGeneration)")
+  }
+
   public func scrollToIndex(chapterId: String, index: Int) {
     let targetPage = dataSource.snapshot().itemIdentifiers.first {
       !$0.isTransition && $0.chapterId == chapterId && $0.pageIndex == index
@@ -302,6 +315,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return
     }
 
+    // Ensure we mutate UICollectionView on the main queue even if bridge calls are scheduled off-main.
     DispatchQueue.main.async {
       self.collectionView.scrollToItem(at: targetIndexPath, at: .top, animated: false)
       self.emitPageVisible(page: page)
@@ -398,7 +412,10 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     // Use the first real page intersecting the top viewport region as canonical current page.
     // This avoids jumping to a deeper page index when transition/short pages are visible.
     let topBoundaryY = collectionView.contentOffset.y + 8
-    for indexPath in visibleIndexPaths.sorted() {
+    // Explicit comparator keeps ordering deterministic even if sections are added later.
+    for indexPath in visibleIndexPaths.sorted(by: {
+      $0.section == $1.section ? $0.item < $1.item : $0.section < $1.section
+    }) {
       guard let attributes = collectionView.layoutAttributesForItem(at: indexPath),
             let page = dataSource.itemIdentifier(for: indexPath),
             !page.isTransition,
@@ -452,7 +469,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return bestPage
     }
 
-    for indexPath in visibleIndexPaths.sorted() {
+    for indexPath in visibleIndexPaths.sorted(by: {
+      $0.section == $1.section ? $0.item < $1.item : $0.section < $1.section
+    }) {
       if let page = dataSource.itemIdentifier(for: indexPath),
          !page.isTransition,
          page.pageIndex >= 0 {
@@ -521,7 +540,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
   private func captureScrollAnchor() -> ScrollAnchor? {
     let viewportTop = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
-    let visibleIndexPaths = collectionView.indexPathsForVisibleItems.sorted()
+    let visibleIndexPaths = collectionView.indexPathsForVisibleItems.sorted(by: {
+      $0.section == $1.section ? $0.item < $1.item : $0.section < $1.section
+    })
 
     for indexPath in visibleIndexPaths {
       guard let page = dataSource.itemIdentifier(for: indexPath),
@@ -609,8 +630,9 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     if !removedIds.isEmpty,
        let anchorPageId,
        let anchorIndex = previousIds.firstIndex(of: anchorPageId) {
-      let removedBeforeOrAtAnchor = previousIds.prefix(anchorIndex + 1).contains { removedIds.contains($0) }
-      if removedBeforeOrAtAnchor {
+      let anchorRemoved = removedIds.contains(anchorPageId)
+      let removedStrictlyBeforeAnchor = previousIds.prefix(anchorIndex).contains { removedIds.contains($0) }
+      if !anchorRemoved && removedStrictlyBeforeAnchor {
         return .removeBeforeAnchor
       }
     }
@@ -639,6 +661,15 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return
     }
 
+    let anchorAgeSeconds = Date().timeIntervalSince1970 - pending.anchor.capturedAtTimestamp
+    if anchorAgeSeconds > pendingAnchorMaxAgeSeconds {
+      logAnchor(
+        "discard pending (stale) age=\(String(format: "%.2f", anchorAgeSeconds))s max=\(String(format: "%.2f", pendingAnchorMaxAgeSeconds))s"
+      )
+      pendingScrollAnchorRestore = nil
+      return
+    }
+
     if hasProgressedForward(from: pending.anchor, to: currentPage) {
       logAnchor(
         "discard pending (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
@@ -653,6 +684,15 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
 
     guard let pending = pendingScrollAnchorRestore else {
+      return
+    }
+
+    let anchorAgeSeconds = Date().timeIntervalSince1970 - pending.anchor.capturedAtTimestamp
+    if anchorAgeSeconds > pendingAnchorMaxAgeSeconds {
+      logAnchor(
+        "discard pending at \(source) (stale) age=\(String(format: "%.2f", anchorAgeSeconds))s max=\(String(format: "%.2f", pendingAnchorMaxAgeSeconds))s"
+      )
+      pendingScrollAnchorRestore = nil
       return
     }
 
@@ -699,4 +739,5 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 }
 
+// Flow-layout conformance is required so `sizeForItemAt` above is used by `UICollectionViewFlowLayout`.
 extension WebtoonReaderView: UICollectionViewDelegateFlowLayout { }

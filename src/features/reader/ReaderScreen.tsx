@@ -6,7 +6,7 @@ import { sourceQueryFactory } from "@/services/source/core/queryFactory";
 import { getSourceChapterPages } from "@/services/source/core/runtime";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { getDecodedParam } from "@/shared/utils";
 import { useReaderProgressSync } from "./hooks/useReaderProgressSync";
@@ -65,6 +65,7 @@ export default function ReaderScreen() {
     hasExplicitInitialPageParam
   );
   const [chapterSwitchTargetId, setChapterSwitchTargetId] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(true);
   const [pendingSeek, setPendingSeek] = useState<{
     chapterId: string;
     pageIndex: number;
@@ -437,7 +438,13 @@ export default function ReaderScreen() {
     settingsQuery.data?.webtoonWindowBehind,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    setSessionReady(false);
+
+    // Route/source/chapter change marks a new reader session on native side.
+    // This is the explicit boundary for preload dedupe memory.
+    void nativeReaderRef.current?.resetSession();
+
     schedulerRef.current?.dispose();
     schedulerRef.current = null;
     if (cursorSyncTimerRef.current) {
@@ -471,6 +478,7 @@ export default function ReaderScreen() {
       initialChapterId,
       initialPage,
     });
+    setSessionReady(true);
   }, [
     debugLog,
     hasExplicitInitialPageParam,
@@ -1012,7 +1020,7 @@ export default function ReaderScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <NativeWebtoonReader
         ref={nativeReaderRef}
-        data={combinedData}
+        data={sessionReady ? combinedData : []}
         onEndReached={handleEndReached}
         onChapterChanged={handleChapterChanged}
         onSingleTap={toggleOverlay}

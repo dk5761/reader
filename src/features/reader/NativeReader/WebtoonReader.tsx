@@ -17,6 +17,7 @@ export type NativeWebtoonReaderRef = {
     getPosition: () => Promise<{ chapterId: string; pageIndex: number } | null>;
     setZoom: (scale: number) => Promise<void>;
     resetZoom: () => Promise<void>;
+    resetSession: () => Promise<void>;
 };
 
 type NativeWebtoonReaderProps = {
@@ -103,6 +104,18 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 await nativeView.resetZoom();
             } catch (error) {
                 console.warn("[NativeWebtoonReader] resetZoom failed", { error });
+            }
+        },
+        resetSession: async () => {
+            const nativeView = nativeViewRef.current;
+            if (!nativeView?.resetSession) {
+                return;
+            }
+
+            try {
+                await nativeView.resetSession();
+            } catch (error) {
+                console.warn("[NativeWebtoonReader] resetSession failed", { error });
             }
         }
     }), []);
