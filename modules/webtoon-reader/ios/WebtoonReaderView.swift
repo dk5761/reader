@@ -256,14 +256,28 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return
     }
 
-    let location = gesture.location(in: collectionView)
+    let locationInCollection = gesture.location(in: collectionView)
+    // UIScrollView coordinate space follows `bounds.origin` (content offset).
+    // Convert to viewport-relative coordinates for bubble placement.
+    let locationInViewport = CGPoint(
+      x: locationInCollection.x - collectionView.bounds.origin.x,
+      y: locationInCollection.y - collectionView.bounds.origin.y
+    )
 
     switch gesture.state {
     case .began:
-      _ = startOrUpdateMagnifier(at: location, forceRefresh: true)
+      _ = startOrUpdateMagnifier(
+        contentLocation: locationInCollection,
+        viewportLocation: locationInViewport,
+        forceRefresh: true
+      )
     case .changed:
       guard isMagnifierActive else { return }
-      let updated = startOrUpdateMagnifier(at: location, forceRefresh: false)
+      let updated = startOrUpdateMagnifier(
+        contentLocation: locationInCollection,
+        viewportLocation: locationInViewport,
+        forceRefresh: false
+      )
       if !updated {
         stopMagnifier()
       }
@@ -274,8 +288,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
   }
 
-  private func startOrUpdateMagnifier(at location: CGPoint, forceRefresh: Bool) -> Bool {
-    guard let indexPath = collectionView.indexPathForItem(at: location),
+  private func startOrUpdateMagnifier(
+    contentLocation: CGPoint,
+    viewportLocation: CGPoint,
+    forceRefresh: Bool
+  ) -> Bool {
+    guard let indexPath = collectionView.indexPathForItem(at: contentLocation),
           let page = dataSource.itemIdentifier(for: indexPath),
           !page.isTransition,
           let cell = collectionView.cellForItem(at: indexPath) as? WebtoonPageCell,
@@ -283,7 +301,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return false
     }
 
-    let pointInCell = collectionView.convert(location, to: cell)
+    let pointInCell = collectionView.convert(contentLocation, to: cell)
     let now = CACurrentMediaTime()
     let shouldRefreshImage = forceRefresh || (now - lastMagnifierRefreshAt >= magnifierUpdateInterval)
     var snapshot: UIImage?
@@ -310,7 +328,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       }
     }
 
-    let frame = magnifierFrame(forTouchLocation: location)
+    let frame = magnifierFrame(forTouchLocation: viewportLocation)
     magnifierBubbleView.setDiameter(magnifierConfig.bubbleSize)
     magnifierBubbleView.frame = frame
     if let snapshot {
@@ -341,15 +359,13 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   private func magnifierFrame(forTouchLocation location: CGPoint) -> CGRect {
     let diameter = magnifierConfig.bubbleSize
     let edgeInset: CGFloat = 8
-    let verticalSpacing: CGFloat = 26
+    let fingerClearance: CGFloat = 36
 
     var originX = location.x - (diameter / 2)
     originX = min(max(originX, edgeInset), bounds.width - diameter - edgeInset)
 
-    var originY = location.y + verticalSpacing
-    if originY + diameter + edgeInset > bounds.height {
-      originY = location.y - diameter - verticalSpacing
-    }
+    // Keep the bubble anchored above the finger for unobstructed reading.
+    var originY = location.y - diameter - fingerClearance
     originY = min(max(originY, edgeInset), bounds.height - diameter - edgeInset)
 
     return CGRect(x: originX, y: originY, width: diameter, height: diameter)
