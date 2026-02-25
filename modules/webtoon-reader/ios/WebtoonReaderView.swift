@@ -39,9 +39,26 @@ struct WebtoonPage: Hashable {
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
   private let preloadLeadPages = 4
 
+  private enum StructuralChangeClass: String {
+    case none = "none"
+    case appendTail = "append_tail"
+    case removeHead = "remove_head"
+    case removeBeforeAnchor = "remove_before_anchor"
+    case reorderOrMixed = "reorder_or_mixed"
+  }
+
   private struct ScrollAnchor {
     let pageId: String
+    let chapterId: String
+    let pageIndex: Int
     let intraItemOffset: CGFloat
+    let capturedAtY: CGFloat
+    let capturedAtTimestamp: TimeInterval
+  }
+
+  private struct PendingScrollAnchorRestore {
+    let anchor: ScrollAnchor
+    let structuralChange: StructuralChangeClass
   }
 
   let onEndReached = EventDispatcher()
@@ -61,7 +78,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
   private var chapterMaxPageIndices: [String: Int] = [:]
   private var preloadedChapters: Set<String> = []
-  private var pendingScrollAnchorRestore: ScrollAnchor? = nil
+  private var pendingScrollAnchorRestore: PendingScrollAnchorRestore? = nil
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -170,7 +187,6 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       uniqueKeysWithValues: previousSnapshotItems.map { ($0.id, $0) }
     )
     let previousItemIds = previousSnapshotItems.map(\.id)
-    let scrollAnchor = captureScrollAnchor()
 
     var snapshot = NSDiffableDataSourceSnapshot<Int, WebtoonPage>()
     snapshot.appendSections([0])
@@ -228,7 +244,18 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     snapshot.appendItems(pages)
 
     let currentItemIds = pages.map(\.id)
-    let hasStructuralChanges = hasStructuralChanges(previousIds: previousItemIds, currentIds: currentItemIds)
+    let anchorPageId = primaryVisiblePage(from: collectionView.indexPathsForVisibleItems)?.id
+    let structuralChange = classifyStructuralChange(
+      previousIds: previousItemIds,
+      currentIds: currentItemIds,
+      anchorPageId: anchorPageId
+    )
+    let shouldAttemptAnchorRestore = shouldAttemptAnchorRestore(for: structuralChange)
+    let scrollAnchor = shouldAttemptAnchorRestore ? captureScrollAnchor() : nil
+
+    if structuralChange != .none {
+      logAnchor("change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore)")
+    }
 
     let changedItems = pages.filter { page in
       guard let previousPage = previousItemsById[page.id] else {
@@ -243,15 +270,25 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     dataSource.apply(snapshot, animatingDifferences: false) { [weak self] in
       guard let self = self else { return }
       self.collectionView.layoutIfNeeded()
-      guard hasStructuralChanges else { return }
+      guard shouldAttemptAnchorRestore else { return }
       guard let scrollAnchor else { return }
 
       if self.collectionView.isDragging || self.collectionView.isDecelerating {
-        self.pendingScrollAnchorRestore = scrollAnchor
+        self.pendingScrollAnchorRestore = PendingScrollAnchorRestore(
+          anchor: scrollAnchor,
+          structuralChange: structuralChange
+        )
+        self.logAnchor(
+          "queued anchor page=\(scrollAnchor.pageId) chapter=\(scrollAnchor.chapterId) index=\(scrollAnchor.pageIndex) change=\(structuralChange.rawValue)"
+        )
         return
       }
 
-      self.restoreScrollAnchor(scrollAnchor)
+      self.pendingScrollAnchorRestore = PendingScrollAnchorRestore(
+        anchor: scrollAnchor,
+        structuralChange: structuralChange
+      )
+      self.applyPendingScrollAnchorRestoreIfNeeded(source: "immediate_apply")
     }
   }
 
@@ -456,6 +493,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       return
     }
 
+    invalidatePendingScrollAnchorRestoreIfForwardProgress(currentPage: page)
     emitPageVisible(page: page)
     emitEndReachedIfNeeded(chapterId: page.chapterId, pageIndex: page.pageIndex)
   }
@@ -466,12 +504,12 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
   func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
     if !decelerate {
-      applyPendingScrollAnchorRestoreIfNeeded()
+      applyPendingScrollAnchorRestoreIfNeeded(source: "didEndDragging_noDecel")
     }
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-    applyPendingScrollAnchorRestoreIfNeeded()
+    applyPendingScrollAnchorRestoreIfNeeded(source: "didEndDecelerating")
   }
 
   func collectionView(_ collectionView: UICollectionView, prefetchItemsAt indexPaths: [IndexPath]) {
@@ -499,21 +537,23 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
       return ScrollAnchor(
         pageId: page.id,
-        intraItemOffset: viewportTop - attributes.frame.minY
+        chapterId: page.chapterId,
+        pageIndex: page.pageIndex,
+        intraItemOffset: viewportTop - attributes.frame.minY,
+        capturedAtY: collectionView.contentOffset.y,
+        capturedAtTimestamp: Date().timeIntervalSince1970
       )
     }
 
     return nil
   }
 
-  private func restoreScrollAnchor(_ anchor: ScrollAnchor?) {
-    guard let anchor = anchor else { return }
-
+  private func targetOffsetY(for anchor: ScrollAnchor) -> CGFloat? {
     let snapshot = dataSource.snapshot()
     guard let page = snapshot.itemIdentifiers.first(where: { $0.id == anchor.pageId }),
           let indexPath = dataSource.indexPath(for: page),
           let attributes = collectionView.layoutAttributesForItem(at: indexPath) else {
-      return
+      return nil
     }
 
     let rawY = attributes.frame.minY + anchor.intraItemOffset - collectionView.adjustedContentInset.top
@@ -524,42 +564,138 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
         - collectionView.bounds.height
         + collectionView.adjustedContentInset.bottom
     )
-    let clampedY = min(max(rawY, minY), maxY)
-
-    if abs(collectionView.contentOffset.y - clampedY) > 0.5 {
-      collectionView.setContentOffset(
-        CGPoint(x: collectionView.contentOffset.x, y: clampedY),
-        animated: false
-      )
-    }
+    return min(max(rawY, minY), maxY)
   }
 
-  private func hasStructuralChanges(previousIds: [String], currentIds: [String]) -> Bool {
-    guard previousIds.count == currentIds.count else {
-      return true
+  private func restoreScrollAnchor(_ anchor: ScrollAnchor, minimumDelta: CGFloat = 0.5) -> Bool {
+    guard let targetY = targetOffsetY(for: anchor) else {
+      return false
     }
 
-    for (index, previousId) in previousIds.enumerated() {
-      if previousId != currentIds[index] {
-        return true
+    let delta = abs(collectionView.contentOffset.y - targetY)
+    guard delta > minimumDelta else {
+      return false
+    }
+
+    collectionView.setContentOffset(
+      CGPoint(x: collectionView.contentOffset.x, y: targetY),
+      animated: false
+    )
+    return true
+  }
+
+  private func classifyStructuralChange(
+    previousIds: [String],
+    currentIds: [String],
+    anchorPageId: String?
+  ) -> StructuralChangeClass {
+    if previousIds == currentIds {
+      return .none
+    }
+
+    if currentIds.count > previousIds.count,
+       Array(currentIds.prefix(previousIds.count)) == previousIds {
+      return .appendTail
+    }
+
+    if previousIds.count > currentIds.count,
+       Array(previousIds.suffix(currentIds.count)) == currentIds {
+      return .removeHead
+    }
+
+    let currentIdSet = Set(currentIds)
+    let removedIds = Set(previousIds.filter { !currentIdSet.contains($0) })
+
+    if !removedIds.isEmpty,
+       let anchorPageId,
+       let anchorIndex = previousIds.firstIndex(of: anchorPageId) {
+      let removedBeforeOrAtAnchor = previousIds.prefix(anchorIndex + 1).contains { removedIds.contains($0) }
+      if removedBeforeOrAtAnchor {
+        return .removeBeforeAnchor
       }
     }
 
-    return false
+    return .reorderOrMixed
   }
 
-  private func applyPendingScrollAnchorRestoreIfNeeded() {
+  private func shouldAttemptAnchorRestore(for change: StructuralChangeClass) -> Bool {
+    switch change {
+    case .none, .appendTail:
+      return false
+    case .removeHead, .removeBeforeAnchor, .reorderOrMixed:
+      return true
+    }
+  }
+
+  private func hasProgressedForward(from anchor: ScrollAnchor, to page: WebtoonPage) -> Bool {
+    if page.chapterId != anchor.chapterId {
+      return true
+    }
+    return page.pageIndex > anchor.pageIndex
+  }
+
+  private func invalidatePendingScrollAnchorRestoreIfForwardProgress(currentPage: WebtoonPage) {
+    guard let pending = pendingScrollAnchorRestore else {
+      return
+    }
+
+    if hasProgressedForward(from: pending.anchor, to: currentPage) {
+      logAnchor(
+        "discard pending (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
+      )
+      pendingScrollAnchorRestore = nil
+    }
+  }
+
+  private func applyPendingScrollAnchorRestoreIfNeeded(source: String) {
     guard !collectionView.isDragging, !collectionView.isDecelerating else {
       return
     }
 
-    guard let anchor = pendingScrollAnchorRestore else {
+    guard let pending = pendingScrollAnchorRestore else {
       return
     }
 
-    pendingScrollAnchorRestore = nil
     collectionView.layoutIfNeeded()
-    restoreScrollAnchor(anchor)
+
+    if let currentPage = primaryVisiblePage(from: collectionView.indexPathsForVisibleItems),
+       hasProgressedForward(from: pending.anchor, to: currentPage) {
+      logAnchor(
+        "discard pending at \(source) (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
+      )
+      pendingScrollAnchorRestore = nil
+      return
+    }
+
+    guard let targetY = targetOffsetY(for: pending.anchor) else {
+      logAnchor("discard pending at \(source) (anchor missing) pageId=\(pending.anchor.pageId)")
+      pendingScrollAnchorRestore = nil
+      return
+    }
+
+    let delta = abs(collectionView.contentOffset.y - targetY)
+    let minimumMaterialDelta: CGFloat = 8.0
+    guard delta >= minimumMaterialDelta else {
+      logAnchor("discard pending at \(source) (delta \(Int(delta)) < \(Int(minimumMaterialDelta))")
+      pendingScrollAnchorRestore = nil
+      return
+    }
+
+    let didRestore = restoreScrollAnchor(pending.anchor, minimumDelta: minimumMaterialDelta)
+    if didRestore {
+      logAnchor(
+        "applied restore at \(source) change=\(pending.structuralChange.rawValue) chapter=\(pending.anchor.chapterId) index=\(pending.anchor.pageIndex) delta=\(Int(delta))"
+      )
+    } else {
+      logAnchor("discard pending at \(source) (restore no-op)")
+    }
+    pendingScrollAnchorRestore = nil
+  }
+
+  private func logAnchor(_ message: String) {
+    #if DEBUG
+    print("[WebtoonReader][Anchor] \(message)")
+    #endif
   }
 }
 
