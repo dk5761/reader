@@ -69,6 +69,10 @@ class ImageDownloadManager {
     }
 
     private async initCacheDir() {
+        await this.ensureCacheDirExists();
+    }
+
+    private async ensureCacheDirExists() {
         const dirInfo = await FileSystem.getInfoAsync(this.cacheDir);
         if (!dirInfo.exists) {
             await FileSystem.makeDirectoryAsync(this.cacheDir, { intermediates: true });
@@ -165,6 +169,55 @@ class ImageDownloadManager {
         return { retriable: true, code: "unknown" };
     }
 
+    private isCannotCreateFileError(error: unknown): boolean {
+        const message = (error as any)?.message ? String((error as any).message) : String(error ?? "");
+        const normalized = message.toLowerCase();
+        const errorCode = String(
+            (error as any)?.code ??
+            (error as any)?.nativeErrorCode ??
+            (error as any)?.errno ??
+            ""
+        ).toLowerCase();
+
+        return (
+            errorCode === "-3000" ||
+            errorCode === "nsurlerrorcannotcreatefile" ||
+            normalized.includes("nsurlerrordomain code=-3000") ||
+            normalized.includes("cannot create file")
+        );
+    }
+
+    private async downloadFile(
+        url: string,
+        localUri: string,
+        headers?: Record<string, string>
+    ) {
+        return FileSystem.downloadAsync(url, localUri, {
+            headers: headers || {},
+            // Page images are only needed while reader is active; foreground session avoids
+            // background URLSession delegate edge-cases that can surface as iOS -3000 errors.
+            sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+        });
+    }
+
+    private async downloadFileWithRetry(
+        url: string,
+        localUri: string,
+        headers?: Record<string, string>
+    ) {
+        try {
+            return await this.downloadFile(url, localUri, headers);
+        } catch (firstError) {
+            if (!this.isCannotCreateFileError(firstError)) {
+                throw firstError;
+            }
+
+            await this.ensureCacheDirExists();
+            await FileSystem.deleteAsync(localUri, { idempotent: true });
+            return this.downloadFile(url, localUri, headers);
+        }
+    }
+
     /**
      * Generates a short, filesystem-safe filename.
      */
@@ -238,6 +291,7 @@ class ImageDownloadManager {
         chapterEpochAtStart: number
     ): Promise<DownloadedPage> {
         await this._initPromise;
+        await this.ensureCacheDirExists();
         const localUri = this.getLocalFilePath(chapterId, url);
         const fileInfo = await FileSystem.getInfoAsync(localUri);
 
@@ -259,9 +313,7 @@ class ImageDownloadManager {
 
         // Download the file
         try {
-            const result = await FileSystem.downloadAsync(url, localUri, {
-                headers: headers || {},
-            });
+            const result = await this.downloadFileWithRetry(url, localUri, headers);
 
             if (result.status !== 200) {
                 throw new DownloadError(`Failed to download image, status: ${result.status}`, {
