@@ -250,6 +250,9 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
       readerMagnifierBubbleSize: dataWithoutId.readerMagnifierBubbleSize ?? 180,
       readerMagnifierZoomScale: dataWithoutId.readerMagnifierZoomScale ?? 2.2,
       readerMagnifierHoldDurationMs: dataWithoutId.readerMagnifierHoldDurationMs ?? 450,
+      readerMagnifierSelectedSourceIdsJson: normalizeSourceIdListJson(
+        dataWithoutId.readerMagnifierSelectedSourceIdsJson ?? "[]"
+      ),
     };
     db.insert(appSettings)
       .values(normalizedSettings)
@@ -267,6 +270,8 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
           readerMagnifierBubbleSize: normalizedSettings.readerMagnifierBubbleSize,
           readerMagnifierZoomScale: normalizedSettings.readerMagnifierZoomScale,
           readerMagnifierHoldDurationMs: normalizedSettings.readerMagnifierHoldDurationMs,
+          readerMagnifierSelectedSourceIdsJson:
+            normalizedSettings.readerMagnifierSelectedSourceIdsJson,
           updatedAt: normalizedSettings.updatedAt,
         },
       })

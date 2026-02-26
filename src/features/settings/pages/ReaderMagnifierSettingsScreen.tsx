@@ -1,15 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { Switch } from "heroui-native";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
   ActionPillButton,
   CenteredLoadingState,
   CenteredState,
+  SelectableChip,
   ScreenHeader,
 } from "@/shared/ui";
 import type { UpdateAppSettingsInput } from "@/services/settings";
+import { useSource } from "@/services/source";
 import {
   appSettingsQueryOptions,
   useUpdateAppSettingsMutation,
@@ -61,10 +63,49 @@ const MAGNIFIER_NUMERIC_CONTROLS: NumericControl[] = [
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
+const EMPTY_SOURCE_IDS: string[] = [];
+
+const normalizeSelectedSourceIds = (
+  selectedSourceIds: string[],
+  availableSourceIds: string[]
+): string[] => {
+  if (availableSourceIds.length === 0) {
+    return [];
+  }
+
+  const selectedIdSet = new Set(
+    selectedSourceIds.map((sourceId) => sourceId.trim()).filter(Boolean)
+  );
+  const normalized = availableSourceIds.filter((sourceId) => selectedIdSet.has(sourceId));
+
+  if (normalized.length === 0) {
+    return availableSourceIds;
+  }
+
+  return normalized;
+};
+
+const areSameSourceIdList = (a: string[], b: string[]): boolean => {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  return a.every((value, index) => value === b[index]);
+};
+
 export default function ReaderMagnifierSettingsScreen() {
   const router = useRouter();
+  const { sources } = useSource();
   const settingsQuery = useQuery(appSettingsQueryOptions());
   const updateSettingsMutation = useUpdateAppSettingsMutation();
+  const sortedSources = useMemo(
+    () => [...sources].sort((a, b) => a.name.localeCompare(b.name)),
+    [sources]
+  );
+  const availableSourceIds = useMemo(
+    () => sortedSources.map((source) => source.id),
+    [sortedSources]
+  );
 
   const settings = settingsQuery.data;
   const effectiveSettings = useMemo(() => {
@@ -107,6 +148,54 @@ export default function ReaderMagnifierSettingsScreen() {
 
   const updateSetting = (input: UpdateAppSettingsInput) => {
     updateSettingsMutation.mutate(input);
+  };
+
+  const persistedSelectedSourceIds =
+    settings.readerMagnifierSelectedSourceIds ?? EMPTY_SOURCE_IDS;
+  const effectiveSelectedSourceIds = useMemo(() => {
+    const pendingSelectedSourceIds =
+      updateSettingsMutation.variables?.readerMagnifierSelectedSourceIds;
+    return pendingSelectedSourceIds ?? persistedSelectedSourceIds;
+  }, [persistedSelectedSourceIds, updateSettingsMutation.variables]);
+  const selectedSourceIds = useMemo(
+    () => normalizeSelectedSourceIds(effectiveSelectedSourceIds, availableSourceIds),
+    [effectiveSelectedSourceIds, availableSourceIds]
+  );
+  const allSourcesSelected =
+    availableSourceIds.length > 0 && selectedSourceIds.length === availableSourceIds.length;
+
+  useEffect(() => {
+    if (!settingsQuery.data || updateSettingsMutation.isPending) {
+      return;
+    }
+
+    const normalizedPersisted = normalizeSelectedSourceIds(
+      settingsQuery.data.readerMagnifierSelectedSourceIds,
+      availableSourceIds
+    );
+
+    if (
+      areSameSourceIdList(
+        normalizedPersisted,
+        settingsQuery.data.readerMagnifierSelectedSourceIds
+      )
+    ) {
+      return;
+    }
+
+    updateSettingsMutation.mutate({
+      readerMagnifierSelectedSourceIds: normalizedPersisted,
+    });
+  }, [availableSourceIds, settingsQuery.data, updateSettingsMutation]);
+
+  const updateSelectedSourceIds = (nextSelectedSourceIds: string[]) => {
+    const normalized = normalizeSelectedSourceIds(nextSelectedSourceIds, availableSourceIds);
+
+    if (areSameSourceIdList(normalized, selectedSourceIds)) {
+      return;
+    }
+
+    updateSetting({ readerMagnifierSelectedSourceIds: normalized });
   };
 
   const adjustNumericSetting = (control: NumericControl, deltaDirection: 1 | -1) => {
@@ -155,6 +244,65 @@ export default function ReaderMagnifierSettingsScreen() {
                 updateSetting({ readerMagnifierEnabled: isSelected });
               }}
             />
+          </View>
+
+          <View className="mt-3 rounded-lg border border-[#2A2A2E] px-3 py-2">
+            <Text className="text-sm font-medium text-white">Enabled Adapters</Text>
+            <Text className="mt-1 text-xs text-[#9B9CA6]">
+              Magnifier is active only for selected source adapters.
+            </Text>
+            {sortedSources.length > 0 ? (
+              <View className="mt-2 flex-row flex-wrap gap-2">
+                <SelectableChip
+                  label="All"
+                  selected={allSourcesSelected}
+                  onPress={() => {
+                    if (updateSettingsMutation.isPending || allSourcesSelected) {
+                      return;
+                    }
+
+                    updateSelectedSourceIds(availableSourceIds);
+                  }}
+                />
+
+                {sortedSources.map((source) => {
+                  const isSelected = selectedSourceIds.includes(source.id);
+                  const isLastSelected = selectedSourceIds.length === 1 && isSelected;
+
+                  return (
+                    <SelectableChip
+                      key={`reader-magnifier-source-${source.id}`}
+                      label={source.name}
+                      selected={isSelected}
+                      onPress={() => {
+                        if (updateSettingsMutation.isPending) {
+                          return;
+                        }
+
+                        if (isSelected) {
+                          if (isLastSelected) {
+                            return;
+                          }
+
+                          updateSelectedSourceIds(
+                            selectedSourceIds.filter((sourceId) => sourceId !== source.id)
+                          );
+                          return;
+                        }
+
+                        updateSelectedSourceIds([...selectedSourceIds, source.id]);
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            ) : (
+              <View className="mt-2 rounded-md border border-[#2A2A2E] bg-[#15161A] p-2">
+                <Text className="text-xs text-[#9B9CA6]">
+                  No adapters available right now.
+                </Text>
+              </View>
+            )}
           </View>
 
           {MAGNIFIER_NUMERIC_CONTROLS.map((control) => {

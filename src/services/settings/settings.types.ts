@@ -12,6 +12,7 @@ export interface AppSettings {
   readerMagnifierBubbleSize: number;
   readerMagnifierZoomScale: number;
   readerMagnifierHoldDurationMs: number;
+  readerMagnifierSelectedSourceIds: string[];
   globalSearchSelectedSourceIds: string[];
   updatedAt: number;
 }
@@ -28,5 +29,6 @@ export interface UpdateAppSettingsInput {
   readerMagnifierBubbleSize?: number;
   readerMagnifierZoomScale?: number;
   readerMagnifierHoldDurationMs?: number;
+  readerMagnifierSelectedSourceIds?: string[];
   globalSearchSelectedSourceIds?: string[];
 }

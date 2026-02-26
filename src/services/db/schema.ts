@@ -173,6 +173,9 @@ export const appSettings = sqliteTable("app_settings", {
   readerMagnifierHoldDurationMs: integer("reader_magnifier_hold_duration_ms")
     .notNull()
     .default(450),
+  readerMagnifierSelectedSourceIdsJson: text("reader_magnifier_selected_source_ids_json")
+    .notNull()
+    .default("[]"),
   updatedAt: integer("updated_at").notNull(),
 });
 

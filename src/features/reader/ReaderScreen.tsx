@@ -1048,8 +1048,13 @@ export default function ReaderScreen() {
 
   // Find total pages for the currently focused chapter by checking its data array
   const activeChapterTotalPages = activeOverlayChapterQuery?.data?.length || 0;
+  const magnifierSelectedSourceIds = settingsQuery.data?.readerMagnifierSelectedSourceIds ?? [];
+  const isMagnifierAllowedForSource =
+    !sourceId ||
+    magnifierSelectedSourceIds.length === 0 ||
+    magnifierSelectedSourceIds.includes(sourceId);
   const magnifierConfig = {
-    enabled: settingsQuery.data?.readerMagnifierEnabled ?? true,
+    enabled: (settingsQuery.data?.readerMagnifierEnabled ?? true) && isMagnifierAllowedForSource,
     bubbleSize: settingsQuery.data?.readerMagnifierBubbleSize ?? 180,
     zoomScale: settingsQuery.data?.readerMagnifierZoomScale ?? 2.2,
     holdDurationMs: settingsQuery.data?.readerMagnifierHoldDurationMs ?? 450,

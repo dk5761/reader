@@ -99,6 +99,9 @@ const mapSettings = (params: {
   readerMagnifierHoldDurationMs: normalizeReaderMagnifierHoldDurationMs(
     params.appRow.readerMagnifierHoldDurationMs
   ),
+  readerMagnifierSelectedSourceIds: parseSourceIdsJson(
+    params.appRow.readerMagnifierSelectedSourceIdsJson
+  ),
   globalSearchSelectedSourceIds: parseSourceIdsJson(params.globalRow.selectedSourceIdsJson),
   updatedAt: Math.max(params.appRow.updatedAt, params.globalRow.updatedAt),
 });
@@ -121,6 +124,7 @@ const ensureAppSettingsRow = (): void => {
       readerMagnifierBubbleSize: 180,
       readerMagnifierZoomScale: 2.2,
       readerMagnifierHoldDurationMs: 450,
+      readerMagnifierSelectedSourceIdsJson: "[]",
       updatedAt: now,
     })
     .onConflictDoNothing({
@@ -204,6 +208,7 @@ export const getAppSettings = (): AppSettings => {
       readerMagnifierBubbleSize: 180,
       readerMagnifierZoomScale: 2.2,
       readerMagnifierHoldDurationMs: 450,
+      readerMagnifierSelectedSourceIds: [],
       globalSearchSelectedSourceIds: [],
       updatedAt: fallbackNow,
     };
@@ -251,6 +256,11 @@ export const updateAppSettings = (
       ),
       readerMagnifierHoldDurationMs: normalizeReaderMagnifierHoldDurationMs(
         input.readerMagnifierHoldDurationMs ?? current.readerMagnifierHoldDurationMs
+      ),
+      readerMagnifierSelectedSourceIdsJson: JSON.stringify(
+        normalizeSourceIds(
+          input.readerMagnifierSelectedSourceIds ?? current.readerMagnifierSelectedSourceIds
+        )
       ),
       updatedAt: now,
     })

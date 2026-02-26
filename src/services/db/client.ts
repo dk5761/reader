@@ -150,6 +150,12 @@ const migrateLegacySourceIds = (): void => {
       idColumn: "id",
       valueColumn: "selected_source_ids_json",
     });
+
+    normalizeSourceIdListColumn({
+      table: "app_settings",
+      idColumn: "id",
+      valueColumn: "reader_magnifier_selected_source_ids_json",
+    });
   });
 
   isLegacySourceMigrationApplied = true;
@@ -201,6 +207,10 @@ const ensureAppSettingsColumns = (): void => {
     {
       name: "reader_magnifier_hold_duration_ms",
       sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_hold_duration_ms INTEGER NOT NULL DEFAULT 450",
+    },
+    {
+      name: "reader_magnifier_selected_source_ids_json",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_selected_source_ids_json TEXT NOT NULL DEFAULT '[]'",
     },
   ];
 
