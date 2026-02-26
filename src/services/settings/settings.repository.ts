@@ -8,6 +8,7 @@ import type {
 
 const APP_SETTINGS_SINGLETON_ID = 1;
 const GLOBAL_SEARCH_SETTINGS_SINGLETON_ID = 1;
+const DEFAULT_MAGNIFIER_SOURCE_ID = "readcomicsonline";
 
 const isReaderDefaultMode = (value: string): value is ReaderDefaultMode =>
   value === "vertical";
@@ -72,6 +73,14 @@ const parseSourceIdsJson = (rawValue: string | null | undefined): string[] => {
   }
 };
 
+const normalizeReaderMagnifierSourceIds = (value: unknown): string[] => {
+  const normalized = normalizeSourceIds(value);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return [DEFAULT_MAGNIFIER_SOURCE_ID];
+};
+
 const mapSettings = (params: {
   appRow: typeof appSettings.$inferSelect;
   globalRow: typeof globalSearchSettings.$inferSelect;
@@ -99,8 +108,8 @@ const mapSettings = (params: {
   readerMagnifierHoldDurationMs: normalizeReaderMagnifierHoldDurationMs(
     params.appRow.readerMagnifierHoldDurationMs
   ),
-  readerMagnifierSelectedSourceIds: parseSourceIdsJson(
-    params.appRow.readerMagnifierSelectedSourceIdsJson
+  readerMagnifierSelectedSourceIds: normalizeReaderMagnifierSourceIds(
+    parseSourceIdsJson(params.appRow.readerMagnifierSelectedSourceIdsJson)
   ),
   globalSearchSelectedSourceIds: parseSourceIdsJson(params.globalRow.selectedSourceIdsJson),
   updatedAt: Math.max(params.appRow.updatedAt, params.globalRow.updatedAt),
@@ -124,7 +133,7 @@ const ensureAppSettingsRow = (): void => {
       readerMagnifierBubbleSize: 180,
       readerMagnifierZoomScale: 2.2,
       readerMagnifierHoldDurationMs: 450,
-      readerMagnifierSelectedSourceIdsJson: "[]",
+      readerMagnifierSelectedSourceIdsJson: JSON.stringify([DEFAULT_MAGNIFIER_SOURCE_ID]),
       updatedAt: now,
     })
     .onConflictDoNothing({
@@ -208,7 +217,7 @@ export const getAppSettings = (): AppSettings => {
       readerMagnifierBubbleSize: 180,
       readerMagnifierZoomScale: 2.2,
       readerMagnifierHoldDurationMs: 450,
-      readerMagnifierSelectedSourceIds: [],
+      readerMagnifierSelectedSourceIds: [DEFAULT_MAGNIFIER_SOURCE_ID],
       globalSearchSelectedSourceIds: [],
       updatedAt: fallbackNow,
     };
@@ -258,7 +267,7 @@ export const updateAppSettings = (
         input.readerMagnifierHoldDurationMs ?? current.readerMagnifierHoldDurationMs
       ),
       readerMagnifierSelectedSourceIdsJson: JSON.stringify(
-        normalizeSourceIds(
+        normalizeReaderMagnifierSourceIds(
           input.readerMagnifierSelectedSourceIds ?? current.readerMagnifierSelectedSourceIds
         )
       ),

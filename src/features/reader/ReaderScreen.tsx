@@ -22,6 +22,7 @@ const MAX_VISITED_CHAPTERS = 3;
 const CURSOR_SYNC_THROTTLE_MS = 90;
 const READER_CACHE_MAX_BYTES = 600 * 1024 * 1024;
 const READER_CACHE_KEEP_RECENT_CHAPTERS = 10;
+const DEFAULT_MAGNIFIER_SOURCE_ID = "readcomicsonline";
 
 export default function ReaderScreen() {
   const queryClient = useQueryClient();
@@ -1048,10 +1049,12 @@ export default function ReaderScreen() {
 
   // Find total pages for the currently focused chapter by checking its data array
   const activeChapterTotalPages = activeOverlayChapterQuery?.data?.length || 0;
-  const magnifierSelectedSourceIds = settingsQuery.data?.readerMagnifierSelectedSourceIds ?? [];
+  const magnifierSelectedSourceIds =
+    settingsQuery.data?.readerMagnifierSelectedSourceIds?.length
+      ? settingsQuery.data.readerMagnifierSelectedSourceIds
+      : [DEFAULT_MAGNIFIER_SOURCE_ID];
   const isMagnifierAllowedForSource =
     !sourceId ||
-    magnifierSelectedSourceIds.length === 0 ||
     magnifierSelectedSourceIds.includes(sourceId);
   const magnifierConfig = {
     enabled: (settingsQuery.data?.readerMagnifierEnabled ?? true) && isMagnifierAllowedForSource,

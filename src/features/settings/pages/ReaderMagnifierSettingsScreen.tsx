@@ -63,7 +63,19 @@ const MAGNIFIER_NUMERIC_CONTROLS: NumericControl[] = [
 const clamp = (value: number, min: number, max: number): number =>
   Math.max(min, Math.min(max, value));
 
-const EMPTY_SOURCE_IDS: string[] = [];
+const DEFAULT_MAGNIFIER_SOURCE_ID = "readcomicsonline";
+
+const getDefaultSelectedSourceIds = (availableSourceIds: string[]): string[] => {
+  if (availableSourceIds.length === 0) {
+    return [];
+  }
+
+  if (availableSourceIds.includes(DEFAULT_MAGNIFIER_SOURCE_ID)) {
+    return [DEFAULT_MAGNIFIER_SOURCE_ID];
+  }
+
+  return [availableSourceIds[0]];
+};
 
 const normalizeSelectedSourceIds = (
   selectedSourceIds: string[],
@@ -79,7 +91,7 @@ const normalizeSelectedSourceIds = (
   const normalized = availableSourceIds.filter((sourceId) => selectedIdSet.has(sourceId));
 
   if (normalized.length === 0) {
-    return availableSourceIds;
+    return getDefaultSelectedSourceIds(availableSourceIds);
   }
 
   return normalized;
@@ -150,8 +162,7 @@ export default function ReaderMagnifierSettingsScreen() {
     updateSettingsMutation.mutate(input);
   };
 
-  const persistedSelectedSourceIds =
-    settings.readerMagnifierSelectedSourceIds ?? EMPTY_SOURCE_IDS;
+  const persistedSelectedSourceIds = settings.readerMagnifierSelectedSourceIds ?? [];
   const effectiveSelectedSourceIds = useMemo(() => {
     const pendingSelectedSourceIds =
       updateSettingsMutation.variables?.readerMagnifierSelectedSourceIds;

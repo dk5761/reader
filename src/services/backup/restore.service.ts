@@ -251,7 +251,7 @@ const restoreAppSettings = (settings: BackupTables["app_settings"]) => {
       readerMagnifierZoomScale: dataWithoutId.readerMagnifierZoomScale ?? 2.2,
       readerMagnifierHoldDurationMs: dataWithoutId.readerMagnifierHoldDurationMs ?? 450,
       readerMagnifierSelectedSourceIdsJson: normalizeSourceIdListJson(
-        dataWithoutId.readerMagnifierSelectedSourceIdsJson ?? "[]"
+        dataWithoutId.readerMagnifierSelectedSourceIdsJson ?? "[\"readcomicsonline\"]"
       ),
     };
     db.insert(appSettings)

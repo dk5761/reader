@@ -210,7 +210,7 @@ const ensureAppSettingsColumns = (): void => {
     },
     {
       name: "reader_magnifier_selected_source_ids_json",
-      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_selected_source_ids_json TEXT NOT NULL DEFAULT '[]'",
+      sql: "ALTER TABLE app_settings ADD COLUMN reader_magnifier_selected_source_ids_json TEXT NOT NULL DEFAULT '[\"readcomicsonline\"]'",
     },
   ];
 

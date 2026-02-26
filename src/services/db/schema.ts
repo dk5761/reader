@@ -175,7 +175,7 @@ export const appSettings = sqliteTable("app_settings", {
     .default(450),
   readerMagnifierSelectedSourceIdsJson: text("reader_magnifier_selected_source_ids_json")
     .notNull()
-    .default("[]"),
+    .default("[\"readcomicsonline\"]"),
   updatedAt: integer("updated_at").notNull(),
 });
 

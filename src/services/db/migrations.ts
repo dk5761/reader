@@ -146,7 +146,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
   reader_magnifier_bubble_size INTEGER NOT NULL DEFAULT 180,
   reader_magnifier_zoom_scale REAL NOT NULL DEFAULT 2.2,
   reader_magnifier_hold_duration_ms INTEGER NOT NULL DEFAULT 450,
-  reader_magnifier_selected_source_ids_json TEXT NOT NULL DEFAULT '[]',
+  reader_magnifier_selected_source_ids_json TEXT NOT NULL DEFAULT '["readcomicsonline"]',
   updated_at INTEGER NOT NULL
 );
 
