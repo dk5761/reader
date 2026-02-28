@@ -1,11 +1,11 @@
-import CookieManager from "@react-native-cookies/cookies";
+import CookieManager from "@preeternal/react-native-cookie-manager";
 import { Platform } from "react-native";
 import {
   clearCfClearance as clearCfClearanceFromWebView,
   getCookieString as getWebViewCookieString,
   isCfClearanceValid as isWebViewCfClearanceValid,
   syncCookiesToNative,
-} from "cookie-sync";
+} from "../../../modules/cookie-sync";
 
 const CF_CLEARANCE_COOKIE_NAME = "cf_clearance";
 
