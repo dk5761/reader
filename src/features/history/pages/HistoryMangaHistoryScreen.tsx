@@ -1,6 +1,5 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { Card, Spinner } from "heroui-native";
-import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useMemo } from "react";
@@ -8,6 +7,7 @@ import { FlatList, Text, View } from "react-native";
 import { useSource } from "@/services/source";
 import {
   ActionPillButton,
+  AuthenticatedImage,
   BackButton,
   CenteredLoadingState,
   CenteredState,
@@ -178,8 +178,8 @@ export default function HistoryMangaHistoryScreen() {
               <View className="flex-row items-center gap-3">
                 <View className="h-20 w-14 overflow-hidden rounded-lg bg-[#111214]">
                   {mangaThumbnailUrl ? (
-                    <Image
-                      source={{ uri: mangaThumbnailUrl }}
+                    <AuthenticatedImage
+                      uri={mangaThumbnailUrl}
                       contentFit="cover"
                       style={{ width: "100%", height: "100%" }}
                       transition={120}
@@ -280,4 +280,3 @@ export default function HistoryMangaHistoryScreen() {
     </View>
   );
 }
-

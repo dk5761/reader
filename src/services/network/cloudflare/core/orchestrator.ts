@@ -3,6 +3,7 @@ import type { AxiosRequestConfig, AxiosResponse } from "axios";
 import {
   clearCfClearance,
   getCookieHeaderForUrl,
+  getOriginFromUrl,
   getDomainFromUrl,
   hasValidCfClearance,
 } from "@/services/cookies";
@@ -28,6 +29,22 @@ interface RetryContext {
   absoluteUrl: string;
   domain: string;
 }
+
+const UNSAFE_WEBVIEW_REQUEST_HEADERS = new Set([
+  "accept-encoding",
+  "content-length",
+  "content-type",
+  "host",
+  "trailer",
+  "te",
+  "upgrade",
+  "cookie",
+  "cookie2",
+  "keep-alive",
+  "transfer-encoding",
+  "set-cookie",
+  "connection",
+]);
 
 const toAbsoluteUrl = (config: AxiosRequestConfig): string | null => {
   if (!config.url) {
@@ -62,6 +79,37 @@ const mergeCookieHeader = (
   config.headers = headers;
 };
 
+const extractWebViewHeaders = (
+  config: CloudflareAwareAxiosConfig
+): { headers: Record<string, string>; userAgent?: string } => {
+  const sourceHeaders = AxiosHeaders.from(config.headers as never).toJSON(true);
+  const headers: Record<string, string> = {};
+  let userAgent: string | undefined;
+
+  Object.entries(sourceHeaders).forEach(([name, value]) => {
+    const normalizedName = name.trim();
+    const lowerName = normalizedName.toLowerCase();
+
+    if (!normalizedName || UNSAFE_WEBVIEW_REQUEST_HEADERS.has(lowerName)) {
+      return;
+    }
+
+    const headerValue = String(value).trim();
+    if (!headerValue) {
+      return;
+    }
+
+    if (lowerName === "user-agent") {
+      userAgent = headerValue;
+      return;
+    }
+
+    headers[normalizedName] = headerValue;
+  });
+
+  return { headers, userAgent };
+};
+
 const createRetryContext = (
   config: CloudflareAwareAxiosConfig
 ): RetryContext | null => {
@@ -72,6 +120,19 @@ const createRetryContext = (
 
   const domain = getDomainFromUrl(absoluteUrl);
   return { config, absoluteUrl, domain };
+};
+
+const resolveWebViewUrl = (absoluteUrl: string): string => {
+  try {
+    const parsedUrl = new URL(absoluteUrl);
+    if (parsedUrl.pathname.startsWith("/api/")) {
+      return getOriginFromUrl(absoluteUrl);
+    }
+
+    return absoluteUrl;
+  } catch {
+    return absoluteUrl;
+  }
 };
 
 export const attachCookiesToRequest = async (
@@ -102,10 +163,14 @@ export const solveCloudflareAndRetry = async (
 
   await cloudflareDomainLock.run(context.domain, async () => {
     await clearCfClearance(context.absoluteUrl);
+    const { headers, userAgent } = extractWebViewHeaders(context.config);
 
     const solveResult = await cloudflareSolverController.solve({
       url: context.absoluteUrl,
+      webViewUrl: resolveWebViewUrl(context.absoluteUrl),
       domain: context.domain,
+      headers,
+      userAgent,
       allowManualFallback: true,
       autoTimeoutMs: CF_AUTO_SOLVE_TIMEOUT_MS,
       manualTimeoutMs: CF_MANUAL_SOLVE_TIMEOUT_MS,

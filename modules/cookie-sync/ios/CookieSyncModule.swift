@@ -1,7 +1,11 @@
 import ExpoModulesCore
+import Foundation
+import UIKit
 import WebKit
 
 public class CookieSyncModule: Module {
+  private var activeSolvers: [UUID: CloudflareSolverSession] = [:]
+
   public func definition() -> ModuleDefinition {
     Name("CookieSync")
 
@@ -203,11 +207,190 @@ public class CookieSyncModule: Module {
         }
       }
     }
+
+    /// Solve a Cloudflare challenge using an off-screen native WKWebView.
+    AsyncFunction("solveCloudflareChallenge") {
+      (
+        url: String,
+        userAgent: String?,
+        headers: [String: String]?,
+        timeoutMs: Double,
+        promise: Promise
+      ) in
+      DispatchQueue.main.async {
+        let sessionId = UUID()
+        let session = CloudflareSolverSession(
+          url: url,
+          userAgent: userAgent,
+          headers: headers ?? [:],
+          timeoutMs: timeoutMs,
+          onFinish: { [weak self] result in
+            self?.activeSolvers.removeValue(forKey: sessionId)
+            promise.resolve(result)
+          }
+        )
+
+        self.activeSolvers[sessionId] = session
+        session.start()
+      }
+    }
   }
   
   /// Helper to check if a cookie matches the target domain
   private func cookieMatchesDomain(cookie: HTTPCookie, targetDomain: String) -> Bool {
     let cookieDomain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
     return targetDomain.hasSuffix(cookieDomain) || cookieDomain.hasSuffix(targetDomain)
+  }
+}
+
+private final class CloudflareSolverSession: NSObject, WKNavigationDelegate {
+  private let url: String
+  private let userAgent: String?
+  private let headers: [String: String]
+  private let timeoutMs: Double
+  private let onFinish: ([String: Any]) -> Void
+  private let cookieStore = WKWebsiteDataStore.default().httpCookieStore
+
+  private var webView: WKWebView?
+  private var finished = false
+  private var startTime = Date()
+  private var originalCookieValue: String?
+
+  init(
+    url: String,
+    userAgent: String?,
+    headers: [String: String],
+    timeoutMs: Double,
+    onFinish: @escaping ([String: Any]) -> Void
+  ) {
+    self.url = url
+    self.userAgent = userAgent
+    self.headers = headers
+    self.timeoutMs = timeoutMs
+    self.onFinish = onFinish
+    super.init()
+  }
+
+  func start() {
+    guard let requestUrl = URL(string: url) else {
+      finish(success: false, reason: "invalid_url")
+      return
+    }
+
+    let targetDomain = requestUrl.host ?? ""
+
+    cookieStore.getAllCookies { [weak self] cookies in
+      guard let self else { return }
+
+      self.originalCookieValue = cookies.first {
+        $0.name == "cf_clearance" && self.cookieMatchesDomain(cookie: $0, targetDomain: targetDomain)
+      }?.value
+
+      let configuration = WKWebViewConfiguration()
+      configuration.websiteDataStore = .default()
+      configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+
+      let webView = WKWebView(
+        frame: CGRect(x: -10000, y: -10000, width: 1, height: 1),
+        configuration: configuration
+      )
+      webView.navigationDelegate = self
+      webView.isOpaque = false
+      webView.backgroundColor = .clear
+      webView.scrollView.isScrollEnabled = false
+
+      if let userAgent = self.userAgent, !userAgent.isEmpty {
+        webView.customUserAgent = userAgent
+      }
+
+      if let containerView = Self.findRootView() {
+        containerView.addSubview(webView)
+      }
+
+      self.webView = webView
+      self.startTime = Date()
+
+      var request = URLRequest(url: requestUrl)
+      self.headers.forEach { key, value in
+        request.setValue(value, forHTTPHeaderField: key)
+      }
+
+      webView.load(request)
+      self.pollForClearance()
+    }
+  }
+
+  private func pollForClearance() {
+    guard !finished else { return }
+
+    let targetDomain = URL(string: url)?.host ?? ""
+    cookieStore.getAllCookies { [weak self] cookies in
+      guard let self, !self.finished else { return }
+
+      let cfCookie = cookies.first {
+        $0.name == "cf_clearance" && self.cookieMatchesDomain(cookie: $0, targetDomain: targetDomain)
+      }
+
+      if let cfCookie, !cfCookie.value.isEmpty, cfCookie.value != self.originalCookieValue {
+        self.finish(success: true, reason: nil)
+        return
+      }
+
+      let elapsedMs = Date().timeIntervalSince(self.startTime) * 1000
+      if elapsedMs >= self.timeoutMs {
+        self.finish(success: false, reason: "timeout")
+        return
+      }
+
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+        self?.pollForClearance()
+      }
+    }
+  }
+
+  private func finish(success: Bool, reason: String?) {
+    guard !finished else { return }
+    finished = true
+
+    webView?.stopLoading()
+    webView?.navigationDelegate = nil
+    webView?.removeFromSuperview()
+    webView = nil
+
+    var result: [String: Any] = ["success": success]
+    if let reason {
+      result["reason"] = reason
+    }
+    onFinish(result)
+  }
+
+  func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    finish(success: false, reason: error.localizedDescription)
+  }
+
+  func webView(
+    _ webView: WKWebView,
+    didFailProvisionalNavigation navigation: WKNavigation!,
+    withError error: Error
+  ) {
+    finish(success: false, reason: error.localizedDescription)
+  }
+
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    pollForClearance()
+  }
+
+  private func cookieMatchesDomain(cookie: HTTPCookie, targetDomain: String) -> Bool {
+    let cookieDomain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
+    return targetDomain.hasSuffix(cookieDomain) || cookieDomain.hasSuffix(targetDomain)
+  }
+
+  private static func findRootView() -> UIView? {
+    return UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first(where: { $0.isKeyWindow })?
+      .rootViewController?
+      .view
   }
 }

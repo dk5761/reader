@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "heroui-native";
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useMemo, useState } from "react";
@@ -10,6 +9,7 @@ import type { ReadingHistoryMangaGroup } from "@/services/history";
 import { useSource } from "@/services/source";
 import {
   ActionPillButton,
+  AuthenticatedImage,
   CenteredLoadingState,
   CenteredState,
   ScreenHeader,
@@ -74,8 +74,8 @@ export default function HistoryScreen() {
           <View className="flex-row items-start gap-2.5 px-2 py-2">
             <View className="h-20 w-14 overflow-hidden rounded-lg bg-[#111214]">
               {item.mangaThumbnailUrl ? (
-                <Image
-                  source={{ uri: item.mangaThumbnailUrl }}
+                <AuthenticatedImage
+                  uri={item.mangaThumbnailUrl}
                   contentFit="cover"
                   style={{ width: "100%", height: "100%" }}
                   transition={120}

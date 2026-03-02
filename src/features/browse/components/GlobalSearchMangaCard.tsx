@@ -1,7 +1,7 @@
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Pressable, Text, View } from "react-native";
 import type { SourceManga } from "@/services/source";
+import { AuthenticatedImage } from "@/shared/ui";
 
 interface GlobalSearchMangaCardProps {
   sourceId: string;
@@ -37,8 +37,8 @@ export const GlobalSearchMangaCard = ({
         <View className="overflow-hidden rounded-lg bg-[#1A1B1E]">
           <View style={{ height: imageHeight }}>
             {manga.thumbnailUrl ? (
-              <Image
-                source={{ uri: manga.thumbnailUrl }}
+              <AuthenticatedImage
+                uri={manga.thumbnailUrl}
                 contentFit="cover"
                 style={{ width: "100%", height: "100%" }}
                 transition={120}

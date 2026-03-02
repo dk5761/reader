@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "heroui-native";
-import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { PressableScale } from "pressto";
 import { Text, View } from "react-native";
+import { AuthenticatedImage } from "./AuthenticatedImage";
 
 export interface MangaGridCardProps {
   title: string;
@@ -38,8 +38,8 @@ export const MangaGridCard = ({
           <View style={{ aspectRatio: 2 / 3 }} className="relative bg-[#111214]">
             <View className="h-full w-full">
               {thumbnailUrl ? (
-                <Image
-                  source={{ uri: thumbnailUrl }}
+                <AuthenticatedImage
+                  uri={thumbnailUrl}
                   contentFit="cover"
                   style={{ width: "100%", height: "100%" }}
                   transition={120}

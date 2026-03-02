@@ -18,6 +18,7 @@ import {
 } from "@/services/source";
 import {
   ActionPillButton,
+  AuthenticatedImage,
   BackButton,
   CenteredLoadingState,
   CenteredState,
@@ -26,7 +27,6 @@ import {
 import { getDecodedParam } from "@/shared/utils";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -631,8 +631,8 @@ export default function MangaDetailsScreen() {
             >
               <View className="h-[170px] w-24 overflow-hidden rounded-lg bg-[#1A1B1E]">
                 {details.thumbnailUrl ? (
-                  <Image
-                    source={{ uri: details.thumbnailUrl }}
+                  <AuthenticatedImage
+                    uri={details.thumbnailUrl}
                     contentFit="cover"
                     style={{ width: "100%", height: "100%" }}
                   />

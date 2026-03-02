@@ -1,8 +1,8 @@
 import { Card } from "heroui-native";
-import { Image } from "expo-image";
 import { PressableScale } from "pressto";
 import { Text, View } from "react-native";
 import type { LibraryUpdateEventEntry } from "@/services/library-update";
+import { AuthenticatedImage } from "@/shared/ui";
 import { formatRelativeTime } from "@/shared/utils";
 
 interface UpdateEventCardProps {
@@ -27,8 +27,8 @@ export const UpdateEventCard = ({
           <View className="flex-row items-start gap-2.5">
             <View className="h-16 w-12 overflow-hidden rounded-lg bg-[#111214]">
               {event.mangaThumbnailUrl ? (
-                <Image
-                  source={{ uri: event.mangaThumbnailUrl }}
+                <AuthenticatedImage
+                  uri={event.mangaThumbnailUrl}
                   contentFit="cover"
                   style={{ width: "100%", height: "100%" }}
                   transition={120}

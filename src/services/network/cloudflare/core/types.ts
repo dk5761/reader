@@ -8,7 +8,10 @@ export type CloudflareSolveFailureReason =
 
 export interface CloudflareSolveRequest {
   url: string;
+  webViewUrl: string;
   domain: string;
+  headers?: Record<string, string>;
+  userAgent?: string;
   allowManualFallback: boolean;
   autoTimeoutMs: number;
   manualTimeoutMs: number;

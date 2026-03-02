@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { AxiosHeaders } from "axios";
 import type { AxiosError, AxiosResponse } from "axios";
 import {
   attachCookiesToRequest,
@@ -6,6 +6,7 @@ import {
   solveCloudflareAndRetry,
   type CloudflareAwareAxiosConfig,
 } from "@/services/network/cloudflare";
+import { DEFAULT_BROWSER_USER_AGENT } from "@/services/network/browserUserAgent";
 
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? "";
 export const API_TIMEOUT_MS = 15000;
@@ -20,6 +21,13 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use(async (config) => {
+  const headers = AxiosHeaders.from(config.headers as never);
+
+  if (!headers.has("User-Agent")) {
+    headers.set("User-Agent", DEFAULT_BROWSER_USER_AGENT);
+  }
+
+  config.headers = headers;
   await attachCookiesToRequest(config as CloudflareAwareAxiosConfig);
   return config;
 });

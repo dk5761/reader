@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { Modal, Platform, SafeAreaView, StyleSheet, Text, View } from "react-native";
 import { PressableScale } from "pressto";
 import { WebView } from "react-native-webview";
 import {
@@ -8,17 +8,32 @@ import {
 } from "../core/constants";
 import { cloudflareSolverController } from "../core/solverController";
 import type { CloudflareSolveRequest, CloudflareSolveResult } from "../core/types";
-import { hasValidCfClearance, syncWebViewCookies } from "@/services/cookies";
+import {
+  hasValidCfClearance,
+  solveCloudflareChallenge,
+  syncWebViewCookies,
+} from "@/services/cookies";
 
 interface SolveSession {
   id: string;
   url: string;
+  webViewUrl: string;
+  headers?: Record<string, string>;
+  userAgent?: string;
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const createSessionId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+const createSession = (request: CloudflareSolveRequest): SolveSession => ({
+  id: createSessionId(),
+  url: request.url,
+  webViewUrl: request.webViewUrl,
+  headers: request.headers,
+  userAgent: request.userAgent,
+});
 
 export const CloudflareChallengeHost = () => {
   const [autoSession, setAutoSession] = useState<SolveSession | null>(null);
@@ -29,7 +44,28 @@ export const CloudflareChallengeHost = () => {
 
   const runAutoSolve = useCallback(
     async (request: CloudflareSolveRequest): Promise<CloudflareSolveResult> => {
-      const session = { id: createSessionId(), url: request.url };
+      if (Platform.OS === "ios") {
+        try {
+          const result = await solveCloudflareChallenge(
+            request.webViewUrl,
+            request.userAgent,
+            request.headers ?? {},
+            request.autoTimeoutMs
+          );
+
+          if (result.success) {
+            await syncWebViewCookies(request.url);
+            const hasClearance = await hasValidCfClearance(request.url);
+            if (hasClearance) {
+              return { success: true, mode: "auto" };
+            }
+          }
+        } catch {
+          // Fall back to the React Native WebView path below.
+        }
+      }
+
+      const session = createSession(request);
       setAutoSession(session);
       await wait(350);
 
@@ -61,7 +97,7 @@ export const CloudflareChallengeHost = () => {
       manualCancelRef.current = false;
       manualDoneRef.current = false;
 
-      const session = { id: createSessionId(), url: request.url };
+      const session = createSession(request);
       setManualSession(session);
       await wait(350);
 
@@ -132,17 +168,33 @@ export const CloudflareChallengeHost = () => {
 
   return (
     <>
-      {autoSession ? (
-        <WebView
-          key={autoSession.id}
-          source={{ uri: autoSession.url }}
-          style={styles.hiddenWebView}
-          javaScriptEnabled
-          domStorageEnabled
-          sharedCookiesEnabled
-          thirdPartyCookiesEnabled
-        />
-      ) : null}
+      <Modal
+        visible={Boolean(autoSession)}
+        animationType="none"
+        transparent
+        presentationStyle="overFullScreen"
+      >
+        <View pointerEvents="none" style={styles.autoModalRoot}>
+          {autoSession ? (
+            <WebView
+              key={autoSession.id}
+              source={{
+                uri: autoSession.webViewUrl,
+                headers: autoSession.headers,
+              }}
+              style={styles.hiddenWebView}
+              javaScriptEnabled
+              domStorageEnabled
+              sharedCookiesEnabled
+              thirdPartyCookiesEnabled
+              userAgent={autoSession.userAgent}
+              onLoadEnd={() => {
+                void syncWebViewCookies(autoSession.url);
+              }}
+            />
+          ) : null}
+        </View>
+      </Modal>
 
       <Modal
         visible={Boolean(manualSession)}
@@ -175,12 +227,20 @@ export const CloudflareChallengeHost = () => {
           {manualSession ? (
             <WebView
               key={manualSession.id}
-              source={{ uri: manualSession.url }}
+              source={{
+                uri: manualSession.webViewUrl,
+                headers: manualSession.headers,
+              }}
               style={styles.manualWebView}
               javaScriptEnabled
               domStorageEnabled
               sharedCookiesEnabled
               thirdPartyCookiesEnabled
+              userAgent={manualSession.userAgent}
+              onLoadEnd={() => {
+                void syncWebViewCookies(manualSession.url);
+                manualDoneRef.current = true;
+              }}
             />
           ) : null}
         </SafeAreaView>
@@ -190,8 +250,14 @@ export const CloudflareChallengeHost = () => {
 };
 
 const styles = StyleSheet.create({
+  autoModalRoot: {
+    flex: 1,
+    backgroundColor: "transparent",
+  },
   hiddenWebView: {
     position: "absolute",
+    top: -10000,
+    left: -10000,
     width: 1,
     height: 1,
     opacity: 0,

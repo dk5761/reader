@@ -1,5 +1,6 @@
 export * from "./BackButton";
 export * from "./ActionPillButton";
+export * from "./AuthenticatedImage";
 export * from "./CenteredState";
 export * from "./CollapsibleText";
 export * from "./ScreenHeader";

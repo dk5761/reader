@@ -47,6 +47,11 @@ interface ClearResult {
   domain: string;
 }
 
+interface SolveResult {
+  success: boolean;
+  reason?: string;
+}
+
 interface CookieSyncModuleType {
   getCookieString(url: string): Promise<CookieResult>;
   hasCfClearance(url: string): Promise<CfClearanceResult>;
@@ -54,6 +59,12 @@ interface CookieSyncModuleType {
   syncCookiesToNative(url: string): Promise<SyncResult>;
   isCfClearanceValid(url: string): Promise<CfValidityResult>;
   clearCfClearance(url: string): Promise<ClearResult>;
+  solveCloudflareChallenge(
+    url: string,
+    userAgent: string | null,
+    headers: Record<string, string>,
+    timeoutMs: number
+  ): Promise<SolveResult>;
 }
 
 // Only available on iOS
@@ -139,6 +150,28 @@ export async function clearCfClearance(url: string): Promise<number> {
   return result.cleared;
 }
 
+/**
+ * Solve a Cloudflare challenge using a native off-screen WKWebView.
+ * iOS only - returns { success: false } on other platforms.
+ */
+export async function solveCloudflareChallenge(
+  url: string,
+  userAgent?: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 12000
+): Promise<SolveResult> {
+  if (!CookieSyncModule) {
+    return { success: false };
+  }
+
+  return CookieSyncModule.solveCloudflareChallenge(
+    url,
+    userAgent ?? null,
+    headers,
+    timeoutMs
+  );
+}
+
 export default {
   getCookieString,
   hasCfClearance,
@@ -146,4 +179,5 @@ export default {
   syncCookiesToNative,
   isCfClearanceValid,
   clearCfClearance,
+  solveCloudflareChallenge,
 };
