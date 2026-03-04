@@ -378,10 +378,6 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   }
 
   public func updateData(data: [[String: Any]]) {
-    if isMagnifierActive {
-      stopMagnifier()
-    }
-
     let previousSnapshotItems = dataSource.snapshot().itemIdentifiers
     let previousItemsById = Dictionary(
       uniqueKeysWithValues: previousSnapshotItems.map { ($0.id, $0) }
@@ -468,6 +464,14 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       logAnchor(
         "change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore) appendTailLayoutShift=\(shouldRestoreForAppendTailLayoutShift) changed=\(changedItems.count)"
       )
+    }
+
+    if structuralChange == .none && changedItems.isEmpty {
+      return
+    }
+
+    if isMagnifierActive {
+      stopMagnifier()
     }
 
     if !changedItems.isEmpty {

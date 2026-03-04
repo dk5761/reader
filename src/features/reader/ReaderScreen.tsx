@@ -428,7 +428,7 @@ export default function ReaderScreen() {
     schedulerRef.current = scheduler;
     lastSchedulerTaskDigestRef.current = "";
     lastSchedulerChapterOrderDigestRef.current = "";
-    const unsubscribe = scheduler.subscribe(() => {
+    const unsubscribe = scheduler.subscribeRenderableChanges(() => {
       setSchedulerVersion((v) => v + 1);
     });
     scheduler.setChapterOrder(activeChapterIdsRef.current);

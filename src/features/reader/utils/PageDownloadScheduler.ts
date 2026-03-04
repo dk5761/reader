@@ -117,6 +117,8 @@ export class PageDownloadScheduler {
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private attempts = new Map<string, number>();
   private listeners = new Set<() => void>();
+  private renderListeners = new Set<() => void>();
+  private lastRenderableStateDigest = "";
 
   private chapterOrder: string[] = [];
   private cursor: { chapterId: string; pageIndex: number } | null = null;
@@ -262,6 +264,13 @@ export class PageDownloadScheduler {
     };
   }
 
+  public subscribeRenderableChanges(listener: () => void): () => void {
+    this.renderListeners.add(listener);
+    return () => {
+      this.renderListeners.delete(listener);
+    };
+  }
+
   public getSnapshot(): SchedulerSnapshot {
     const pages: Record<string, SchedulerPageState> = {};
     this.pageState.forEach((value, key) => {
@@ -311,6 +320,7 @@ export class PageDownloadScheduler {
   public dispose() {
     this.disposed = true;
     this.listeners.clear();
+    this.renderListeners.clear();
     this.tasks.clear();
     this.pageState.clear();
     this.queuedLaneByPage.clear();
@@ -328,7 +338,33 @@ export class PageDownloadScheduler {
     if (this.disposed) {
       return;
     }
+
+    const nextRenderableStateDigest = this.buildRenderableStateDigest();
+    const shouldNotifyRenderListeners = nextRenderableStateDigest !== this.lastRenderableStateDigest;
+    this.lastRenderableStateDigest = nextRenderableStateDigest;
+
     this.listeners.forEach((listener) => listener());
+    if (shouldNotifyRenderListeners) {
+      this.renderListeners.forEach((listener) => listener());
+    }
+  }
+
+  private buildRenderableStateDigest(): string {
+    return Array.from(this.pageState.entries())
+      .sort(([leftPageId], [rightPageId]) => leftPageId.localeCompare(rightPageId))
+      .map(([pageId, state]) => {
+        if (state.status === "ready") {
+          return `${pageId}:ready:${state.localUri}:${state.width}x${state.height}`;
+        }
+
+        if (state.status === "error" && state.terminal) {
+          return `${pageId}:error:${state.code}:${state.statusCode ?? ""}`;
+        }
+
+        return "";
+      })
+      .filter((entry) => entry.length > 0)
+      .join(";");
   }
 
   private clearRetryTimer(pageId: string) {

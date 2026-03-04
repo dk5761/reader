@@ -420,6 +420,22 @@ class TiledImageView: UIView {
     return activeImageSource != nil
   }
 
+  private func sizeApproximatelyMatches(
+    _ lhs: CGSize,
+    _ rhs: CGSize,
+    tolerance: CGFloat = 0.5
+  ) -> Bool {
+    abs(lhs.width - rhs.width) <= tolerance && abs(lhs.height - rhs.height) <= tolerance
+  }
+
+  private func updateViewFrames(to size: CGSize) {
+    frame = CGRect(origin: .zero, size: size)
+    proxyImageView.frame = CGRect(origin: .zero, size: size)
+    tiledLayerView.frame = CGRect(origin: .zero, size: size)
+    loadingOverlayView.frame = CGRect(origin: .zero, size: size)
+    errorOverlayView.frame = CGRect(origin: .zero, size: size)
+  }
+
   func magnifierSnapshot(at point: CGPoint, diameter: CGFloat, zoomScale: CGFloat) -> UIImage? {
     guard isReadyForMagnifier,
           bounds.width > 0,
@@ -528,10 +544,7 @@ class TiledImageView: UIView {
     currentSize = size
     activeImageSource = nil
     placeholderRetryHandler = nil
-    frame = CGRect(origin: .zero, size: size)
-    proxyImageView.frame = CGRect(origin: .zero, size: size)
-    tiledLayerView.frame = CGRect(origin: .zero, size: size)
-    loadingOverlayView.frame = CGRect(origin: .zero, size: size)
+    updateViewFrames(to: size)
     proxyImageView.image = nil
     proxyImageView.alpha = 0
     tiledLayerView.configure(source: nil, viewportSize: size)
@@ -549,11 +562,7 @@ class TiledImageView: UIView {
     currentSize = size
     activeImageSource = nil
     placeholderRetryHandler = allowRetry ? onRetry : nil
-    frame = CGRect(origin: .zero, size: size)
-    proxyImageView.frame = CGRect(origin: .zero, size: size)
-    tiledLayerView.frame = CGRect(origin: .zero, size: size)
-    loadingOverlayView.frame = CGRect(origin: .zero, size: size)
-    errorOverlayView.frame = CGRect(origin: .zero, size: size)
+    updateViewFrames(to: size)
     proxyImageView.image = nil
     proxyImageView.alpha = 0
     tiledLayerView.configure(source: nil, viewportSize: size)
@@ -562,8 +571,29 @@ class TiledImageView: UIView {
   }
 
   func configure(withLocalPath path: String, exactSize: CGSize) {
+    let previousPath = currentPath
+    let previousSize = currentSize
     currentPath = path
     currentSize = exactSize
+
+    let isSamePath = previousPath == path || imagePath == path
+    let isSameSize = previousSize.map { sizeApproximatelyMatches($0, exactSize) } ?? false
+
+    if isSamePath {
+      updateViewFrames(to: exactSize)
+
+      if let activeImageSource {
+        if !isSameSize {
+          tiledLayerView.configure(source: activeImageSource, viewportSize: exactSize)
+        }
+        return
+      }
+
+      if imagePath == path {
+        return
+      }
+    }
+
     loadImage(path: path, exactSize: exactSize)
   }
 
@@ -588,10 +618,7 @@ class TiledImageView: UIView {
     imagePath = path
     activeImageSource = nil
     placeholderRetryHandler = nil
-    frame = CGRect(origin: .zero, size: exactSize)
-    proxyImageView.frame = CGRect(origin: .zero, size: exactSize)
-    tiledLayerView.frame = CGRect(origin: .zero, size: exactSize)
-    loadingOverlayView.frame = CGRect(origin: .zero, size: exactSize)
+    updateViewFrames(to: exactSize)
     proxyImageView.alpha = 0
     proxyImageView.image = nil
     tiledLayerView.configure(source: nil, viewportSize: exactSize)
@@ -629,6 +656,8 @@ class TiledImageView: UIView {
 
       DispatchQueue.main.async {
         guard self.imagePath == path else { return }
+        let resolvedSize = self.currentSize ?? exactSize
+        self.updateViewFrames(to: resolvedSize)
         self.activeImageSource = source
         if let preview {
           self.proxyImageView.image = preview
@@ -641,7 +670,7 @@ class TiledImageView: UIView {
             self.shouldReportPreviewFailure = false
           }
         }
-        self.tiledLayerView.configure(source: source, viewportSize: exactSize)
+        self.tiledLayerView.configure(source: source, viewportSize: resolvedSize)
       }
     }
   }
