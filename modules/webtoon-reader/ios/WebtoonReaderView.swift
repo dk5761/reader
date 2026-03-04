@@ -34,6 +34,11 @@ struct WebtoonPage: Hashable {
       nextChapterTitle != other.nextChapterTitle ||
       headers != other.headers
   }
+
+  func hasLayoutAffectingChanges(comparedTo other: WebtoonPage) -> Bool {
+    aspectRatio != other.aspectRatio ||
+      isTransition != other.isTransition
+  }
 }
 
 class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDataSourcePrefetching {
@@ -109,6 +114,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
   let onLoadingStateChanged = EventDispatcher()
   let onImageError = EventDispatcher()
   let onRetryRequested = EventDispatcher()
+  let onDiagnosticLog = EventDispatcher()
 
   private var collectionView: UICollectionView!
   private var dataSource: UICollectionViewDiffableDataSource<Int, WebtoonPage>!
@@ -440,19 +446,30 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       currentIds: currentItemIds,
       anchorPageId: anchorPageId
     )
-    let shouldAttemptAnchorRestore = shouldAttemptAnchorRestore(for: structuralChange)
-    let scrollAnchor = shouldAttemptAnchorRestore ? captureScrollAnchor() : nil
-
-    if structuralChange != .none {
-      logAnchor("change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore)")
-    }
-
     let changedItems = pages.filter { page in
       guard let previousPage = previousItemsById[page.id] else {
         return false
       }
       return page.hasRenderableChanges(comparedTo: previousPage)
     }
+    let shouldRestoreForAppendTailLayoutShift =
+      structuralChange == .appendTail &&
+      shouldRestoreAnchorForAppendTailLayoutShift(
+        previousIds: previousItemIds,
+        changedItems: changedItems,
+        previousItemsById: previousItemsById,
+        anchorPageId: anchorPageId
+      )
+    let shouldAttemptAnchorRestore =
+      shouldAttemptAnchorRestore(for: structuralChange) || shouldRestoreForAppendTailLayoutShift
+    let scrollAnchor = shouldAttemptAnchorRestore ? captureScrollAnchor() : nil
+
+    if structuralChange != .none || shouldRestoreForAppendTailLayoutShift {
+      logAnchor(
+        "change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore) appendTailLayoutShift=\(shouldRestoreForAppendTailLayoutShift) changed=\(changedItems.count)"
+      )
+    }
+
     if !changedItems.isEmpty {
       snapshot.reloadItems(changedItems)
     }
@@ -505,12 +522,14 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     guard let page = targetPage,
           let targetIndexPath = dataSource.indexPath(for: page) else {
+      logDiagnostic(scope: "seek", "missing chapter=\(chapterId) index=\(index)")
       return
     }
 
     // Ensure we mutate UICollectionView on the main queue even if bridge calls are scheduled off-main.
     DispatchQueue.main.async {
       self.collectionView.scrollToItem(at: targetIndexPath, at: .top, animated: false)
+      self.logDiagnostic(scope: "seek", "applied chapter=\(chapterId) index=\(index)")
       self.emitPageVisible(page: page)
     }
   }
@@ -597,6 +616,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       "chapterId": page.chapterId,
       "pageIndex": page.pageIndex
     ])
+    logDiagnostic(scope: "visible", "chapter=\(page.chapterId) index=\(page.pageIndex) pageId=\(page.id)")
   }
 
   private func primaryVisiblePage(from visibleIndexPaths: [IndexPath]) -> WebtoonPage? {
@@ -694,6 +714,7 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     if !preloadedChapters.contains(chapterId) {
       preloadedChapters.insert(chapterId)
+      logDiagnostic(scope: "preload", "emit_end_reached chapter=\(chapterId) index=\(pageIndex)")
       onEndReached(["chapterId": chapterId])
     }
   }
@@ -849,6 +870,31 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
   }
 
+  private func shouldRestoreAnchorForAppendTailLayoutShift(
+    previousIds: [String],
+    changedItems: [WebtoonPage],
+    previousItemsById: [String: WebtoonPage],
+    anchorPageId: String?
+  ) -> Bool {
+    guard let anchorPageId,
+          let anchorIndex = previousIds.firstIndex(of: anchorPageId) else {
+      return false
+    }
+
+    for page in changedItems {
+      guard let previousPage = previousItemsById[page.id],
+            page.hasLayoutAffectingChanges(comparedTo: previousPage),
+            let changedIndex = previousIds.firstIndex(of: page.id),
+            changedIndex <= anchorIndex else {
+        continue
+      }
+
+      return true
+    }
+
+    return false
+  }
+
   private func hasProgressedForward(from anchor: ScrollAnchor, to page: WebtoonPage) -> Bool {
     if page.chapterId != anchor.chapterId {
       return true
@@ -932,10 +978,19 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     pendingScrollAnchorRestore = nil
   }
 
-  private func logAnchor(_ message: String) {
+  private func logDiagnostic(scope: String, _ message: String) {
+    onDiagnosticLog([
+      "scope": scope,
+      "message": message
+    ])
+
     #if DEBUG
-    print("[WebtoonReader][Anchor] \(message)")
+    print("[WebtoonReader][\(scope)] \(message)")
     #endif
+  }
+
+  private func logAnchor(_ message: String) {
+    logDiagnostic(scope: "anchor", message)
   }
 }
 

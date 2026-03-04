@@ -41,6 +41,11 @@ export type OnRetryRequestedEventPayload = {
   pageId: string;
 };
 
+export type OnDiagnosticLogEventPayload = {
+  scope: string;
+  message: string;
+};
+
 export type ReaderMagnifierConfig = {
   enabled: boolean;
   bubbleSize: number;
@@ -59,6 +64,7 @@ export type WebtoonReaderViewProps = {
   onLoadingStateChanged?: (event: { nativeEvent: OnLoadingStateChangedEventPayload }) => void;
   onImageError?: (event: { nativeEvent: OnImageErrorEventPayload }) => void;
   onRetryRequested?: (event: { nativeEvent: OnRetryRequestedEventPayload }) => void;
+  onDiagnosticLog?: (event: { nativeEvent: OnDiagnosticLogEventPayload }) => void;
   style?: StyleProp<ViewStyle>;
   ref?: React.Ref<any>;
 };

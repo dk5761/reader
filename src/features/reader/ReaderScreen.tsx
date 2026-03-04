@@ -4,6 +4,7 @@ import { chapterProgressQueryOptions } from "@/services/progress";
 import { getSourceChapters, getSourceMangaDetails } from "@/services/source";
 import { sourceQueryFactory } from "@/services/source/core/queryFactory";
 import { getSourceChapterPages } from "@/services/source/core/runtime";
+import { logReaderDiagnostic } from "@/services/diagnostics";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -89,6 +90,8 @@ export default function ReaderScreen() {
   const previousActiveChapterIdsRef = useRef<string[]>([initialChapterId]);
   const sourceRef = useRef<{ sourceId: string; mangaId: string }>({ sourceId, mangaId });
   const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
+    logReaderDiagnostic("reader/js", message, payload);
+
     if (typeof __DEV__ !== "undefined" && __DEV__) {
       if (payload) {
         console.log("[ReaderDebug]", message, payload);
@@ -787,6 +790,13 @@ export default function ReaderScreen() {
   }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data, schedulerSnapshot.pages]);
 
   useEffect(() => {
+    debugLog("combined_data_updated", {
+      itemCount: combinedData.length,
+      activeChapterIds,
+    });
+  }, [activeChapterIds, combinedData.length, debugLog]);
+
+  useEffect(() => {
     if (!pendingSeek) return;
 
     const targetExists = combinedData.some(
@@ -802,18 +812,31 @@ export default function ReaderScreen() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     (async () => {
+      debugLog("pending_seek_attempt", {
+        chapterId: pendingSeek.chapterId,
+        pageIndex: pendingSeek.pageIndex,
+      });
+
       const didSeek = await nativeReaderRef.current?.seekTo(
         pendingSeek.chapterId,
         pendingSeek.pageIndex,
       );
 
       if (!cancelled && didSeek) {
+        debugLog("pending_seek_success", {
+          chapterId: pendingSeek.chapterId,
+          pageIndex: pendingSeek.pageIndex,
+        });
         setPendingSeek(null);
         if (chapterSwitchTargetId === pendingSeek.chapterId) {
           chapterSwitchTargetRef.current = null;
           setChapterSwitchTargetId(null);
         }
       } else if (!cancelled) {
+        debugLog("pending_seek_retry_scheduled", {
+          chapterId: pendingSeek.chapterId,
+          pageIndex: pendingSeek.pageIndex,
+        });
         retryTimer = setTimeout(() => {
           setPendingSeek((current) => {
             if (!current) return current;
@@ -832,10 +855,14 @@ export default function ReaderScreen() {
         clearTimeout(retryTimer);
       }
     };
-  }, [chapterSwitchTargetId, combinedData, pendingSeek]);
+  }, [chapterSwitchTargetId, combinedData, debugLog, pendingSeek]);
 
   const handleEndReached = useCallback((reachedChapterId: string) => {
     if (chapterSwitchTargetRef.current) {
+      debugLog("end_reached_ignored_during_chapter_switch", {
+        reachedChapterId,
+        chapterSwitchTargetId: chapterSwitchTargetRef.current,
+      });
       return;
     }
 
@@ -848,6 +875,11 @@ export default function ReaderScreen() {
 
     // Only preload if we reached the boundary of the explicitly *last* chapter in our list
     if (reachedChapterId !== currentActiveChapterIds[currentActiveChapterIds.length - 1]) {
+      debugLog("end_reached_ignored_non_tail_chapter", {
+        reachedChapterId,
+        tailChapterId: currentActiveChapterIds[currentActiveChapterIds.length - 1],
+        activeChapterIds: currentActiveChapterIds,
+      });
       return;
     }
 
@@ -865,6 +897,13 @@ export default function ReaderScreen() {
           currentOverlayChapterId,
         );
 
+        debugLog("end_reached_append_next_chapter", {
+          reachedChapterId,
+          nextChapterId,
+          currentIndex,
+          nextIndex,
+          appended,
+        });
         debugLog("active_window_update", {
           reachedChapterId,
           nextChapterId,
@@ -875,7 +914,18 @@ export default function ReaderScreen() {
         });
 
         setActiveChapterIds(nextIds);
+      } else {
+        debugLog("end_reached_next_chapter_already_loaded", {
+          reachedChapterId,
+          nextChapterId,
+          activeChapterIds: currentActiveChapterIds,
+        });
       }
+    } else {
+      debugLog("end_reached_no_next_chapter", {
+        reachedChapterId,
+        currentIndex,
+      });
     }
   }, [chaptersQuery.data, currentOverlayChapterId, debugLog, pruneOldestChapters]);
 
@@ -903,9 +953,18 @@ export default function ReaderScreen() {
   const handlePageChanged = useCallback((chapterId: string, pageIndex: number) => {
     const switchingTo = chapterSwitchTargetRef.current;
     if (switchingTo && chapterId !== switchingTo) {
+      debugLog("page_changed_ignored_while_switching", {
+        chapterId,
+        pageIndex,
+        switchingTo,
+      });
       return;
     }
     const normalizedPageIndex = Math.max(0, Math.floor(pageIndex));
+    debugLog("page_changed", {
+      chapterId,
+      pageIndex: normalizedPageIndex,
+    });
     setCurrentOverlayChapterId(chapterId);
     setCurrentOverlayPageIndex(normalizedPageIndex);
     setCurrentProgressCursor({
@@ -913,32 +972,56 @@ export default function ReaderScreen() {
       pageIndex: normalizedPageIndex,
     });
     setCurrentPage(normalizedPageIndex);
-  }, [setCurrentPage]);
+  }, [debugLog, setCurrentPage]);
 
   const handleChapterChanged = useCallback((chapterId: string) => {
     const switchingTo = chapterSwitchTargetRef.current;
     if (switchingTo && chapterId !== switchingTo) {
+      debugLog("chapter_changed_ignored_while_switching", {
+        chapterId,
+        switchingTo,
+      });
       return;
     }
+    debugLog("chapter_changed", {
+      chapterId,
+      previousChapterId: currentOverlayChapterId,
+    });
     if (chapterId !== currentOverlayChapterId) {
       // Transition cells can emit chapter changes before a concrete page event.
       // Reset only the visible counter here; avoid forcing native seek/snapping.
       setCurrentOverlayPageIndex(0);
     }
     setCurrentOverlayChapterId(chapterId);
-  }, [currentOverlayChapterId]);
+  }, [currentOverlayChapterId, debugLog]);
 
   const handleImageError = useCallback((_pageId: string, _error: string) => {}, []);
 
+  const handleNativeDiagnosticLog = useCallback((scope: string, message: string) => {
+    logReaderDiagnostic(`reader/native/${scope}`, message);
+
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      console.log("[ReaderNative]", scope, message);
+    }
+  }, []);
+
   const handleSeek = useCallback((pageIndex: number) => {
     if (chapterSwitchTargetRef.current) {
+      debugLog("manual_seek_ignored_during_chapter_switch", {
+        pageIndex,
+        chapterSwitchTargetId: chapterSwitchTargetRef.current,
+      });
       return;
     }
     const targetPage = Math.floor(pageIndex);
+    debugLog("manual_seek", {
+      chapterId: currentOverlayChapterId,
+      pageIndex: targetPage,
+    });
     setCurrentOverlayPageIndex(targetPage);
     setSchedulerCursorNow(currentOverlayChapterId, targetPage);
     void nativeReaderRef.current?.seekTo(currentOverlayChapterId, targetPage);
-  }, [currentOverlayChapterId, setSchedulerCursorNow]);
+  }, [currentOverlayChapterId, debugLog, setSchedulerCursorNow]);
 
   const switchToChapter = useCallback((targetChapterId: string) => {
     if (!targetChapterId || chapterSwitchTargetRef.current) {
@@ -996,13 +1079,6 @@ export default function ReaderScreen() {
   });
 
   if (!chapter && (primaryQuery?.isPending || !primaryQuery?.data)) {
-    debugLog("rendering loading screen", {
-      reason: primaryQuery?.isPending ? "primaryQueryPending" : "primaryQueryNoData",
-      entryChapterId,
-      activeChapterIds,
-      primaryFetchStatus: primaryQuery?.fetchStatus ?? "missing",
-      primaryStatus: primaryQuery?.status ?? "missing",
-    });
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -1027,13 +1103,6 @@ export default function ReaderScreen() {
   }
 
   if (!chapter) {
-    debugLog("rendering fallback loading because chapter is null", {
-      entryChapterId,
-      routeResetVersion,
-      primaryStatus: primaryQuery?.status ?? "missing",
-      primaryFetchStatus: primaryQuery?.fetchStatus ?? "missing",
-      primaryHasData: Boolean(primaryQuery?.data),
-    });
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -1077,6 +1146,7 @@ export default function ReaderScreen() {
         onScrollBegin={hideOverlay}
         onImageError={handleImageError}
         onRetryRequested={retryPage}
+        onDiagnosticLog={handleNativeDiagnosticLog}
       />
 
       {/* Floating Overlays */}

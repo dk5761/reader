@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Switch } from "heroui-native";
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -9,6 +9,7 @@ import {
   CenteredState,
   ScreenHeader,
 } from "@/shared/ui";
+import { exportRecentReaderDiagnostics } from "@/services/diagnostics";
 import {
   appSettingsQueryOptions,
   useUpdateAppSettingsMutation,
@@ -19,6 +20,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const settingsQuery = useQuery(appSettingsQueryOptions());
   const updateSettingsMutation = useUpdateAppSettingsMutation();
+  const [isExportingDiagnostics, setExportingDiagnostics] = useState(false);
+  const [diagnosticsStatusMessage, setDiagnosticsStatusMessage] = useState<string | null>(null);
 
   const settings = settingsQuery.data;
   const effectiveSettings = useMemo(() => {
@@ -35,6 +38,29 @@ export default function SettingsScreen() {
       ...updateSettingsMutation.variables,
     };
   }, [settings, updateSettingsMutation.variables]);
+
+  const handleExportDiagnostics = useCallback(async () => {
+    if (isExportingDiagnostics) {
+      return;
+    }
+
+    setExportingDiagnostics(true);
+    setDiagnosticsStatusMessage(null);
+
+    try {
+      const filePath = await exportRecentReaderDiagnostics(3);
+      const fileName = filePath.split("/").filter(Boolean).pop() ?? "reader-diagnostics.log";
+      setDiagnosticsStatusMessage(`Exported ${fileName}`);
+    } catch (error) {
+      setDiagnosticsStatusMessage(
+        error instanceof Error
+          ? error.message
+          : "Could not export diagnostics. Please try again.",
+      );
+    } finally {
+      setExportingDiagnostics(false);
+    }
+  }, [isExportingDiagnostics]);
 
   if (settingsQuery.isPending) {
     return <CenteredLoadingState message="Loading settings..." withBackground={false} />;
@@ -121,6 +147,26 @@ export default function SettingsScreen() {
           <Text className="mt-1 text-xs text-[#9B9CA6]">
             Configure bubble size, zoom, and hold delay for press-and-hold magnification.
           </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          className="mt-3 rounded-xl border border-[#2A2A2E] bg-[#1A1B1E] p-4"
+          disabled={isExportingDiagnostics}
+          onPress={() => {
+            void handleExportDiagnostics();
+          }}
+        >
+          <Text className="text-base font-semibold text-white">
+            {isExportingDiagnostics ? "Exporting Reader Diagnostics..." : "Export Reader Diagnostics"}
+          </Text>
+          <Text className="mt-1 text-xs text-[#9B9CA6]">
+            Create a shareable log file containing the last three hours of reader diagnostics.
+          </Text>
+          {diagnosticsStatusMessage ? (
+            <Text className="mt-2 text-xs text-[#C9CAD6]">
+              {diagnosticsStatusMessage}
+            </Text>
+          ) : null}
         </TouchableOpacity>
 
         <TouchableOpacity

@@ -22,7 +22,8 @@ public class WebtoonReaderModule: Module {
         "onScrollBegin",
         "onLoadingStateChanged",
         "onImageError",
-        "onRetryRequested"
+        "onRetryRequested",
+        "onDiagnosticLog"
       )
 
       AsyncFunction("scrollToIndex") { (view: WebtoonReaderView, chapterId: String, index: Int) in

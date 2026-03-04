@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 
 import {
     OnChapterChangedEventPayload,
+    OnDiagnosticLogEventPayload,
     OnEndReachedEventPayload,
     OnImageErrorEventPayload,
     OnLoadingStateChangedEventPayload,
@@ -32,6 +33,7 @@ type NativeWebtoonReaderProps = {
     onLoadingStateChanged?: (pageId: string, isLoading: boolean) => void;
     onImageError?: (pageId: string, error: string) => void;
     onRetryRequested?: (pageId: string) => void;
+    onDiagnosticLog?: (scope: string, message: string) => void;
 };
 
 export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebtoonReaderProps>(({
@@ -45,6 +47,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
     onLoadingStateChanged,
     onImageError,
     onRetryRequested,
+    onDiagnosticLog,
 }, ref) => {
     const nativeViewRef = React.useRef<any>(null);
 
@@ -171,6 +174,13 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
         [onRetryRequested]
     );
 
+    const handleDiagnosticLog = React.useCallback(
+        (event: { nativeEvent: OnDiagnosticLogEventPayload }) => {
+            onDiagnosticLog?.(event.nativeEvent.scope, event.nativeEvent.message);
+        },
+        [onDiagnosticLog]
+    );
+
     return (
         <View style={styles.container}>
             <WebtoonReaderView
@@ -186,6 +196,7 @@ export const NativeWebtoonReader = forwardRef<NativeWebtoonReaderRef, NativeWebt
                 onLoadingStateChanged={handleLoadingStateChanged}
                 onImageError={handleImageError}
                 onRetryRequested={handleRetryRequested}
+                onDiagnosticLog={handleDiagnosticLog}
             />
         </View>
     );
