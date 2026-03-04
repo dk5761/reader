@@ -906,6 +906,17 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     return page.pageIndex > anchor.pageIndex
   }
 
+  private func shouldDiscardPendingRestoreForForwardProgress(
+    pending: PendingScrollAnchorRestore
+  ) -> Bool {
+    switch pending.structuralChange {
+    case .reorderOrMixed:
+      return true
+    case .none, .appendTail, .removeHead, .removeBeforeAnchor:
+      return false
+    }
+  }
+
   private func invalidatePendingScrollAnchorRestoreIfForwardProgress(currentPage: WebtoonPage) {
     guard let pending = pendingScrollAnchorRestore else {
       return
@@ -921,6 +932,13 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
 
     if hasProgressedForward(from: pending.anchor, to: currentPage) {
+      guard shouldDiscardPendingRestoreForForwardProgress(pending: pending) else {
+        logAnchor(
+          "retain pending despite forward progress change=\(pending.structuralChange.rawValue) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
+        )
+        return
+      }
+
       logAnchor(
         "discard pending (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
       )
@@ -947,14 +965,21 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
     }
 
     collectionView.layoutIfNeeded()
+    let shouldCheckForwardProgress = shouldDiscardPendingRestoreForForwardProgress(pending: pending)
 
     if let currentPage = primaryVisiblePage(from: collectionView.indexPathsForVisibleItems),
        hasProgressedForward(from: pending.anchor, to: currentPage) {
-      logAnchor(
-        "discard pending at \(source) (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
-      )
-      pendingScrollAnchorRestore = nil
-      return
+      if shouldCheckForwardProgress {
+        logAnchor(
+          "discard pending at \(source) (forward progress) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
+        )
+        pendingScrollAnchorRestore = nil
+        return
+      } else {
+        logAnchor(
+          "retain pending at \(source) despite forward progress change=\(pending.structuralChange.rawValue) pendingChapter=\(pending.anchor.chapterId) pendingIndex=\(pending.anchor.pageIndex) currentChapter=\(currentPage.chapterId) currentIndex=\(currentPage.pageIndex)"
+        )
+      }
     }
 
     guard let targetY = targetOffsetY(for: pending.anchor) else {
