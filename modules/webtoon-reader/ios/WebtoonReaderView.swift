@@ -22,22 +22,29 @@ struct WebtoonPage: Hashable {
     hasher.combine(id)
   }
 
-  func hasRenderableChanges(comparedTo other: WebtoonPage) -> Bool {
+  /// Changes that require the cell to be reconfigured (image path, error state, etc.)
+  /// NOTE: loadState is intentionally excluded - the cell handles loading internally based on localPath.
+  func needsCellReconfigure(comparedTo other: WebtoonPage) -> Bool {
     localPath != other.localPath ||
-      pageIndex != other.pageIndex ||
-      chapterId != other.chapterId ||
-      aspectRatio != other.aspectRatio ||
-      loadState != other.loadState ||
       errorMessage != other.errorMessage ||
       isTransition != other.isTransition ||
       previousChapterTitle != other.previousChapterTitle ||
-      nextChapterTitle != other.nextChapterTitle ||
-      headers != other.headers
+      nextChapterTitle != other.nextChapterTitle
   }
 
+  /// Changes that affect layout but don't require full cell reconfigure
   func hasLayoutAffectingChanges(comparedTo other: WebtoonPage) -> Bool {
     aspectRatio != other.aspectRatio ||
       isTransition != other.isTransition
+  }
+
+  /// Legacy - kept for compatibility, prefer needsCellReconfigure
+  func hasRenderableChanges(comparedTo other: WebtoonPage) -> Bool {
+    needsCellReconfigure(comparedTo: other) ||
+      aspectRatio != other.aspectRatio ||
+      pageIndex != other.pageIndex ||
+      chapterId != other.chapterId ||
+      headers != other.headers
   }
 }
 
@@ -442,17 +449,19 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       currentIds: currentItemIds,
       anchorPageId: anchorPageId
     )
-    let changedItems = pages.filter { page in
+    // Only reload items that need actual cell reconfiguration (image content, error state).
+    // Metadata-only changes (headers, chapterId, pageIndex) don't require reload and won't cause flicker.
+    let itemsNeedingReload = pages.filter { page in
       guard let previousPage = previousItemsById[page.id] else {
         return false
       }
-      return page.hasRenderableChanges(comparedTo: previousPage)
+      return page.needsCellReconfigure(comparedTo: previousPage)
     }
     let shouldRestoreForAppendTailLayoutShift =
       structuralChange == .appendTail &&
       shouldRestoreAnchorForAppendTailLayoutShift(
         previousIds: previousItemIds,
-        changedItems: changedItems,
+        changedItems: itemsNeedingReload,
         previousItemsById: previousItemsById,
         anchorPageId: anchorPageId
       )
@@ -462,11 +471,11 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
 
     if structuralChange != .none || shouldRestoreForAppendTailLayoutShift {
       logAnchor(
-        "change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore) appendTailLayoutShift=\(shouldRestoreForAppendTailLayoutShift) changed=\(changedItems.count)"
+        "change=\(structuralChange.rawValue) shouldRestore=\(shouldAttemptAnchorRestore) appendTailLayoutShift=\(shouldRestoreForAppendTailLayoutShift) needsReload=\(itemsNeedingReload.count)"
       )
     }
 
-    if structuralChange == .none && changedItems.isEmpty {
+    if structuralChange == .none && itemsNeedingReload.isEmpty {
       return
     }
 
@@ -474,8 +483,8 @@ class WebtoonReaderView: ExpoView, UICollectionViewDelegate, UICollectionViewDat
       stopMagnifier()
     }
 
-    if !changedItems.isEmpty {
-      snapshot.reloadItems(changedItems)
+    if !itemsNeedingReload.isEmpty {
+      snapshot.reloadItems(itemsNeedingReload)
     }
 
     let applyGeneration = sessionGeneration

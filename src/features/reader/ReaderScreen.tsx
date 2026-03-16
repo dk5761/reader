@@ -727,8 +727,15 @@ export default function ReaderScreen() {
     });
   }, [debugLog, schedulerSnapshot.debug]);
 
+  // Cache page objects by ID to avoid unnecessary native reloads.
+  // Only creates new objects when actual content changes.
+  const pageCacheRef = useRef<Map<string, any>>(new Map());
+  
   // Combine all loaded pages seamlessly
   const combinedData = useMemo(() => {
+    const cache = pageCacheRef.current;
+    const currentPageIds = new Set<string>();
+    
     let merged: any[] = [];
     for (let i = 0; i < chapterPagesQueries.length; i++) {
       const query = chapterPagesQueries[i];
@@ -744,20 +751,39 @@ export default function ReaderScreen() {
           const prevDisplay = prevChapterMeta?.title || (prevChapterMeta?.number ? `Chapter ${prevChapterMeta.number}` : "Previous Chapter");
           const nextDisplay = nextChapterMeta?.title || (nextChapterMeta?.number ? `Chapter ${nextChapterMeta.number}` : "Next Chapter");
 
-          merged.push({
-            id: `transition-${cId}`,
+          const transitionId = `transition-${cId}`;
+          currentPageIds.add(transitionId);
+          
+          const transitionObj = {
+            id: transitionId,
             localPath: "",
             pageIndex: -1,
             chapterId: cId,
-            aspectRatio: 1, // Ignored by native transition cell
+            aspectRatio: 1,
             isTransition: true,
             previousChapterTitle: prevDisplay,
             nextChapterTitle: nextDisplay
-          });
+          };
+          
+          // Cache and reuse transition object if unchanged
+          const cachedTransition = cache.get(transitionId);
+          if (
+            cachedTransition &&
+            cachedTransition.previousChapterTitle === prevDisplay &&
+            cachedTransition.nextChapterTitle === nextDisplay
+          ) {
+            merged.push(cachedTransition);
+          } else {
+            cache.set(transitionId, transitionObj);
+            merged.push(transitionObj);
+          }
         }
 
-        merged = merged.concat(query.data.map((p, index) => {
+        for (let index = 0; index < query.data.length; index++) {
+          const p = query.data[index];
           const pageId = `${cId}-${index}`;
+          currentPageIds.add(pageId);
+          
           const state = schedulerSnapshot.pages[pageId];
           const isReady = state?.status === "ready";
           const isTerminalFailure = state?.status === "error" && state.terminal;
@@ -769,23 +795,49 @@ export default function ReaderScreen() {
             isReady && state.width > 0 && state.height > 0
               ? state.width / state.height
               : undefined;
-
-          return {
-            id: pageId,
-            localPath: isReady ? state.localUri : "",
-            pageIndex: index,
-            chapterId: cId,
-            aspectRatio: sourceAspectRatio ?? decodedAspectRatio ?? 1,
-            loadState: isReady ? "ready" : (isTerminalFailure ? "failed" : "loading"),
-            errorMessage: isTerminalFailure
-              ? (state.statusCode ? `Failed to load page (${state.statusCode}).` : "Failed to load page.")
-              : undefined,
-            isTransition: false,
-            headers: p.headers,
-          };
-        }));
+          
+          const localPath = isReady ? state.localUri : "";
+          const errorMessage = isTerminalFailure
+            ? (state.statusCode ? `Failed to load page (${state.statusCode}).` : "Failed to load page.")
+            : undefined;
+          const aspectRatio = sourceAspectRatio ?? decodedAspectRatio ?? 1;
+          
+          // Check cache for existing page object with same content
+          const cached = cache.get(pageId);
+          if (
+            cached &&
+            cached.localPath === localPath &&
+            cached.errorMessage === errorMessage &&
+            cached.aspectRatio === aspectRatio &&
+            cached.headers === p.headers
+          ) {
+            merged.push(cached);
+          } else {
+            const pageObj = {
+              id: pageId,
+              localPath,
+              pageIndex: index,
+              chapterId: cId,
+              aspectRatio,
+              loadState: isReady ? "ready" : (isTerminalFailure ? "failed" : "loading"),
+              errorMessage,
+              isTransition: false,
+              headers: p.headers,
+            };
+            cache.set(pageId, pageObj);
+            merged.push(pageObj);
+          }
+        }
       }
     }
+    
+    // Prune cache entries for pages no longer in the data set
+    for (const [cachedId] of cache) {
+      if (!currentPageIds.has(cachedId)) {
+        cache.delete(cachedId);
+      }
+    }
+    
     return merged;
   }, [chapterPagesQueries, activeChapterIds, chaptersQuery.data, schedulerSnapshot.pages]);
 
