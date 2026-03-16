@@ -1,4 +1,5 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsFocused } from "@react-navigation/native";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -34,6 +35,7 @@ type BrowseMode = "popular" | "latest" | "search";
 const GRID_COLUMNS = 2;
 const GRID_HORIZONTAL_PADDING = 16;
 const GRID_COLUMN_GAP = 12;
+const NAVIGATION_LOCK_TIMEOUT_MS = 1200;
 
 const modeLabelMap: Record<BrowseMode, string> = {
   popular: "Popular",
@@ -108,6 +110,7 @@ export default function SourceMangaListScreen() {
   const queryClient = useQueryClient();
   const { width: screenWidth } = useWindowDimensions();
   const router = useRouter();
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{
     sourceId?: string | string[];
     mode?: string | string[];
@@ -154,6 +157,40 @@ export default function SourceMangaListScreen() {
   const screenInstanceIdRef = useRef(
     `browse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
+  const navigationLockRef = useRef<{
+    mangaId: string | null;
+    lockedAt: number | null;
+    timeoutId: ReturnType<typeof setTimeout> | null;
+  }>({
+    mangaId: null,
+    lockedAt: null,
+    timeoutId: null,
+  });
+
+  const releaseNavigationLock = useCallback((reason: string) => {
+    const currentLock = navigationLockRef.current;
+    const lockedMangaId = currentLock.mangaId;
+
+    if (currentLock.timeoutId) {
+      clearTimeout(currentLock.timeoutId);
+    }
+
+    navigationLockRef.current = {
+      mangaId: null,
+      lockedAt: null,
+      timeoutId: null,
+    };
+
+    if (lockedMangaId) {
+      logReaderDiagnostic("browse-source", "navigation lock released", {
+        screenInstanceId: screenInstanceIdRef.current,
+        routeSourceId,
+        sourceName: source?.name ?? null,
+        lockedMangaId,
+        reason,
+      });
+    }
+  }, [routeSourceId, source?.name]);
 
   const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
     const data = {
@@ -176,9 +213,16 @@ export default function SourceMangaListScreen() {
     debugLog("screen mounted");
 
     return () => {
+      releaseNavigationLock("screen_unmounted");
       debugLog("screen unmounted");
     };
-  }, [debugLog]);
+  }, [debugLog, releaseNavigationLock]);
+
+  useEffect(() => {
+    if (isFocused) {
+      releaseNavigationLock("screen_focused");
+    }
+  }, [isFocused, releaseNavigationLock]);
 
   useEffect(() => {
     const isRouteSearch = routeModeParam === "search" && routeQueryParam.length > 0;
@@ -319,6 +363,55 @@ export default function SourceMangaListScreen() {
     searchInput,
     statusFilter,
   ]);
+
+  const handleOpenMangaDetails = useCallback((item: SourceManga, index: number) => {
+    if (!routeSourceId) {
+      debugLog("manga navigation ignored due to missing source", {
+        tappedIndex: index,
+        tappedMangaId: item.id,
+        tappedMangaTitle: item.title,
+      });
+      return;
+    }
+
+    if (navigationLockRef.current.mangaId) {
+      debugLog("manga navigation blocked by lock", {
+        tappedIndex: index,
+        tappedMangaId: item.id,
+        tappedMangaTitle: item.title,
+        tappedMangaUrl: item.url,
+        lockedMangaId: navigationLockRef.current.mangaId,
+        lockedAt: navigationLockRef.current.lockedAt,
+      });
+      return;
+    }
+
+    navigationLockRef.current = {
+      mangaId: item.id,
+      lockedAt: Date.now(),
+      timeoutId: setTimeout(() => {
+        releaseNavigationLock("timeout");
+      }, NAVIGATION_LOCK_TIMEOUT_MS),
+    };
+
+    debugLog("manga card pressed", {
+      tappedIndex: index,
+      tappedMangaId: item.id,
+      tappedMangaTitle: item.title,
+      tappedMangaUrl: item.url,
+      browseMode: mode,
+      debouncedQuery,
+      statusFilter,
+    });
+
+    router.push({
+      pathname: "/manga/[sourceId]/[mangaId]",
+      params: {
+        sourceId: routeSourceId,
+        mangaId: item.id,
+      },
+    });
+  }, [debugLog, debouncedQuery, mode, releaseNavigationLock, routeSourceId, router, statusFilter]);
   const libraryMembershipSet = useMemo(
     () =>
       new Set(
@@ -448,24 +541,10 @@ export default function SourceMangaListScreen() {
                 width={gridItemWidth}
                 title={item.title}
                 thumbnailUrl={item.thumbnailUrl}
+                disabled={Boolean(navigationLockRef.current.mangaId)}
                 showInLibraryChip={libraryMembershipSet.has(`${routeSourceId}::${item.id}`)}
                 onPress={() => {
-                  debugLog("manga card pressed", {
-                    tappedIndex: index,
-                    tappedMangaId: item.id,
-                    tappedMangaTitle: item.title,
-                    tappedMangaUrl: item.url,
-                    browseMode: mode,
-                    debouncedQuery,
-                    statusFilter,
-                  });
-                  router.push({
-                    pathname: "/manga/[sourceId]/[mangaId]",
-                    params: {
-                      sourceId: routeSourceId,
-                      mangaId: item.id,
-                    },
-                  });
+                  handleOpenMangaDetails(item, index);
                 }}
               />
             )}

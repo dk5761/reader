@@ -1,8 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Card } from "heroui-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { PressableScale } from "pressto";
-import { Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import { AuthenticatedImage } from "./AuthenticatedImage";
 
 export interface MangaGridCardProps {
@@ -11,6 +10,7 @@ export interface MangaGridCardProps {
   width: number;
   onPress: () => void;
   onLongPress?: () => void;
+  disabled?: boolean;
   showInLibraryChip?: boolean;
   isSelectMode?: boolean;
   isSelected?: boolean;
@@ -22,12 +22,18 @@ export const MangaGridCard = ({
   width,
   onPress,
   onLongPress,
+  disabled = false,
   showInLibraryChip = false,
   isSelectMode = false,
   isSelected = false,
 }: MangaGridCardProps) => {
   return (
-    <PressableScale style={{ width }} onPress={onPress} onLongPress={onLongPress}>
+    <Pressable
+      style={{ width }}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      disabled={disabled}
+    >
       <Card
         variant="secondary"
         animation="disable-all"
@@ -92,6 +98,6 @@ export const MangaGridCard = ({
           </View>
         </Card.Body>
       </Card>
-    </PressableScale>
+    </Pressable>
   );
 };
