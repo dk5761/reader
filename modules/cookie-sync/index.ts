@@ -126,7 +126,12 @@ export async function syncCookiesToNative(url: string): Promise<number> {
  */
 export async function isCfClearanceValid(
   url: string
-): Promise<{ isValid: boolean; exists: boolean; expiresDate?: number }> {
+): Promise<{
+  isValid: boolean;
+  exists: boolean;
+  isExpired?: boolean;
+  expiresDate?: number;
+}> {
   if (!CookieSyncModule) {
     return { isValid: false, exists: false };
   }
@@ -134,6 +139,7 @@ export async function isCfClearanceValid(
   return {
     isValid: result.isValid,
     exists: result.exists,
+    isExpired: result.isExpired,
     expiresDate: result.expiresDate,
   };
 }

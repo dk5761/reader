@@ -1,6 +1,6 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,6 +15,7 @@ import {
   sourceQueryFactory,
   type SourceManga,
 } from "@/services/source";
+import { logReaderDiagnostic } from "@/services/diagnostics";
 import { libraryEntriesQueryOptions } from "@/services/library";
 import { useSource } from "@/services/source";
 import {
@@ -150,6 +151,34 @@ export default function SourceMangaListScreen() {
   const [statusFilter, setStatusFilter] = useState<"all" | "ongoing" | "completed">(
     "all"
   );
+  const screenInstanceIdRef = useRef(
+    `browse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  );
+
+  const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
+    const data = {
+      screenInstanceId: screenInstanceIdRef.current,
+      routeSourceId,
+      routeModeParam,
+      routeQueryParam,
+      sourceName: source?.name ?? null,
+      ...payload,
+    };
+
+    logReaderDiagnostic("browse-source", message, data);
+
+    if (typeof __DEV__ !== "undefined" && __DEV__) {
+      console.log("[BrowseSourceDebug]", message, data);
+    }
+  }, [routeModeParam, routeQueryParam, routeSourceId, source?.name]);
+
+  useEffect(() => {
+    debugLog("screen mounted");
+
+    return () => {
+      debugLog("screen unmounted");
+    };
+  }, [debugLog]);
 
   useEffect(() => {
     const isRouteSearch = routeModeParam === "search" && routeQueryParam.length > 0;
@@ -189,8 +218,11 @@ export default function SourceMangaListScreen() {
       return;
     }
 
+    debugLog("selected source synced", {
+      selectedSourceId: source.id,
+    });
     setSelectedSourceId(source.id);
-  }, [setSelectedSourceId, source]);
+  }, [debugLog, setSelectedSourceId, source]);
 
   const activeFilters = useMemo(() => {
     if (!supportsFilters) {
@@ -261,6 +293,32 @@ export default function SourceMangaListScreen() {
     () => mangaQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [mangaQuery.data]
   );
+  useEffect(() => {
+    debugLog("browse query state changed", {
+      mode,
+      debouncedQuery,
+      searchInput,
+      statusFilter,
+      isPending: mangaQuery.isPending,
+      isError: mangaQuery.isError,
+      errorMessage: mangaQuery.error?.message ?? null,
+      itemCount: mangaItems.length,
+      hasNextPage: mangaQuery.hasNextPage ?? false,
+      isFetchingNextPage: mangaQuery.isFetchingNextPage,
+    });
+  }, [
+    debouncedQuery,
+    debugLog,
+    mangaItems.length,
+    mangaQuery.error?.message,
+    mangaQuery.hasNextPage,
+    mangaQuery.isError,
+    mangaQuery.isFetchingNextPage,
+    mangaQuery.isPending,
+    mode,
+    searchInput,
+    statusFilter,
+  ]);
   const libraryMembershipSet = useMemo(
     () =>
       new Set(
@@ -385,13 +443,22 @@ export default function SourceMangaListScreen() {
             contentContainerClassName="px-4 pb-8"
             columnWrapperStyle={{ gap: GRID_COLUMN_GAP }}
             ItemSeparatorComponent={() => <View className="h-4" />}
-            renderItem={({ item }) => (
+            renderItem={({ item, index }) => (
               <MangaGridCard
                 width={gridItemWidth}
                 title={item.title}
                 thumbnailUrl={item.thumbnailUrl}
                 showInLibraryChip={libraryMembershipSet.has(`${routeSourceId}::${item.id}`)}
                 onPress={() => {
+                  debugLog("manga card pressed", {
+                    tappedIndex: index,
+                    tappedMangaId: item.id,
+                    tappedMangaTitle: item.title,
+                    tappedMangaUrl: item.url,
+                    browseMode: mode,
+                    debouncedQuery,
+                    statusFilter,
+                  });
                   router.push({
                     pathname: "/manga/[sourceId]/[mangaId]",
                     params: {

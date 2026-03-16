@@ -2,11 +2,13 @@ import { AxiosHeaders } from "axios";
 import type { AxiosRequestConfig, AxiosResponse } from "axios";
 import {
   clearCfClearance,
+  getCfClearanceDebugState,
   getCookieHeaderForUrl,
   getOriginFromUrl,
   getDomainFromUrl,
   hasValidCfClearance,
 } from "@/services/cookies";
+import { logReaderDiagnostic } from "@/services/diagnostics";
 import {
   CF_AUTO_SOLVE_TIMEOUT_MS,
   CF_MANUAL_SOLVE_TIMEOUT_MS,
@@ -158,36 +160,104 @@ export const solveCloudflareAndRetry = async (
 
   const retryCount = context.config.__cfRetryCount ?? 0;
   if (retryCount >= CF_MAX_RETRY_ATTEMPTS) {
+    logReaderDiagnostic("cloudflare", "retry limit exceeded", {
+      domain: context.domain,
+      url: context.absoluteUrl,
+      retryCount,
+    });
     throw new CloudflareRetryLimitExceededError(context.domain, retryCount);
   }
 
-  await cloudflareDomainLock.run(context.domain, async () => {
-    await clearCfClearance(context.absoluteUrl);
-    const { headers, userAgent } = extractWebViewHeaders(context.config);
-
-    const solveResult = await cloudflareSolverController.solve({
-      url: context.absoluteUrl,
-      webViewUrl: resolveWebViewUrl(context.absoluteUrl),
+  const preSolveClearanceState = await getCfClearanceDebugState(context.absoluteUrl).catch(
+    (error) => ({
       domain: context.domain,
-      headers,
-      userAgent,
-      allowManualFallback: true,
-      autoTimeoutMs: CF_AUTO_SOLVE_TIMEOUT_MS,
-      manualTimeoutMs: CF_MANUAL_SOLVE_TIMEOUT_MS,
-    });
+      url: context.absoluteUrl,
+      error,
+    })
+  );
 
-    if (!solveResult.success) {
-      throw new CloudflareSolveFailedError(
-        context.domain,
-        solveResult.reason ?? "unknown"
-      );
-    }
-
-    const hasClearance = await hasValidCfClearance(context.absoluteUrl);
-    if (!hasClearance) {
-      throw new CloudflareClearanceMissingError(context.domain);
-    }
+  logReaderDiagnostic("cloudflare", "retry solve started", {
+    domain: context.domain,
+    url: context.absoluteUrl,
+    retryCount,
+    webViewUrl: resolveWebViewUrl(context.absoluteUrl),
+    preSolveClearanceState,
   });
+
+  try {
+    await cloudflareDomainLock.run(context.domain, async () => {
+      await clearCfClearance(context.absoluteUrl);
+      logReaderDiagnostic("cloudflare", "clearance cleared before solve", {
+        domain: context.domain,
+        url: context.absoluteUrl,
+      });
+
+      const { headers, userAgent } = extractWebViewHeaders(context.config);
+
+      const solveResult = await cloudflareSolverController.solve({
+        url: context.absoluteUrl,
+        webViewUrl: resolveWebViewUrl(context.absoluteUrl),
+        domain: context.domain,
+        headers,
+        userAgent,
+        allowManualFallback: true,
+        autoTimeoutMs: CF_AUTO_SOLVE_TIMEOUT_MS,
+        manualTimeoutMs: CF_MANUAL_SOLVE_TIMEOUT_MS,
+      });
+
+      logReaderDiagnostic("cloudflare", "solve attempt finished", {
+        domain: context.domain,
+        url: context.absoluteUrl,
+        retryCount,
+        solveResult,
+      });
+
+      if (!solveResult.success) {
+        throw new CloudflareSolveFailedError(
+          context.domain,
+          solveResult.reason ?? "unknown"
+        );
+      }
+
+      const hasClearance = await hasValidCfClearance(context.absoluteUrl);
+      const postSolveClearanceState = await getCfClearanceDebugState(
+        context.absoluteUrl
+      ).catch((error) => ({
+        domain: context.domain,
+        url: context.absoluteUrl,
+        error,
+      }));
+
+      logReaderDiagnostic("cloudflare", "post-solve clearance check", {
+        domain: context.domain,
+        url: context.absoluteUrl,
+        retryCount,
+        hasClearance,
+        postSolveClearanceState,
+      });
+
+      if (!hasClearance) {
+        throw new CloudflareClearanceMissingError(context.domain);
+      }
+    });
+  } catch (error) {
+    const failureClearanceState = await getCfClearanceDebugState(context.absoluteUrl).catch(
+      (clearanceError) => ({
+        domain: context.domain,
+        url: context.absoluteUrl,
+        error: clearanceError,
+      })
+    );
+
+    logReaderDiagnostic("cloudflare", "retry solve failed", {
+      domain: context.domain,
+      url: context.absoluteUrl,
+      retryCount,
+      failureClearanceState,
+      error,
+    });
+    throw error;
+  }
 
   const nextConfig: CloudflareAwareAxiosConfig = {
     ...context.config,
@@ -196,5 +266,11 @@ export const solveCloudflareAndRetry = async (
 
   const cookieHeader = await getCookieHeaderForUrl(context.absoluteUrl);
   mergeCookieHeader(nextConfig, cookieHeader);
+  logReaderDiagnostic("cloudflare", "retrying request after solve", {
+    domain: context.domain,
+    url: context.absoluteUrl,
+    nextRetryCount: nextConfig.__cfRetryCount,
+    hasCookieHeader: Boolean(cookieHeader),
+  });
   return executeRequest(nextConfig);
 };

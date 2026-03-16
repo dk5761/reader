@@ -16,6 +16,7 @@ import {
   useSource,
   type SourceChapter,
 } from "@/services/source";
+import { logReaderDiagnostic } from "@/services/diagnostics";
 import {
   ActionPillButton,
   AuthenticatedImage,
@@ -29,7 +30,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { PressableScale } from "pressto";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   FlatList,
@@ -159,15 +160,32 @@ export default function MangaDetailsScreen() {
     useSetBelowChaptersReadStateMutation();
   const [pendingBelowRule, setPendingBelowRule] =
     useState<PendingBelowRule | null>(null);
-  const debugLog = (message: string, payload?: Record<string, unknown>) => {
+  const screenInstanceIdRef = useRef(
+    `manga-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  );
+  const debugLog = useCallback((message: string, payload?: Record<string, unknown>) => {
+    const data = {
+      screenInstanceId: screenInstanceIdRef.current,
+      sourceId,
+      mangaId,
+      sourceName: source?.name ?? null,
+      ...payload,
+    };
+
+    logReaderDiagnostic("manga-details", message, data);
+
     if (typeof __DEV__ !== "undefined" && __DEV__) {
-      if (payload) {
-        console.log("[MangaDetailsDebug]", message, payload);
-        return;
-      }
-      console.log("[MangaDetailsDebug]", message);
+      console.log("[MangaDetailsDebug]", message, data);
     }
-  };
+  }, [mangaId, source?.name, sourceId]);
+
+  useEffect(() => {
+    debugLog("screen mounted");
+
+    return () => {
+      debugLog("screen unmounted");
+    };
+  }, [debugLog]);
 
   useEffect(() => {
     return () => {
@@ -183,7 +201,7 @@ export default function MangaDetailsScreen() {
         queryKey: sourceQueryFactory.chapters(sourceId, mangaId),
       });
     };
-  }, [mangaId, queryClient, sourceId]);
+  }, [debugLog, mangaId, queryClient, sourceId]);
 
   const allChapters = useMemo(() => {
     const chapters = chaptersQuery.data ?? [];
@@ -255,6 +273,49 @@ export default function MangaDetailsScreen() {
   const isReadStateMutationPending =
     setChapterReadStateMutation.isPending ||
     setBelowChaptersReadStateMutation.isPending;
+
+  useEffect(() => {
+    debugLog("route/source resolved", {
+      resolvedSource: source
+        ? {
+            id: source.id,
+            name: source.name,
+          }
+        : null,
+    });
+  }, [debugLog, mangaId, source, sourceId]);
+
+  useEffect(() => {
+    debugLog("details query state changed", {
+      status: detailsQuery.status,
+      fetchStatus: detailsQuery.fetchStatus,
+      errorMessage: detailsQuery.error?.message ?? null,
+      title: detailsQuery.data?.title ?? null,
+      detailsUrl: detailsQuery.data?.url ?? null,
+    });
+  }, [
+    debugLog,
+    detailsQuery.data?.title,
+    detailsQuery.data?.url,
+    detailsQuery.error?.message,
+    detailsQuery.fetchStatus,
+    detailsQuery.status,
+  ]);
+
+  useEffect(() => {
+    debugLog("chapters query state changed", {
+      status: chaptersQuery.status,
+      fetchStatus: chaptersQuery.fetchStatus,
+      errorMessage: chaptersQuery.error?.message ?? null,
+      chapterCount: chaptersQuery.data?.length ?? 0,
+    });
+  }, [
+    debugLog,
+    chaptersQuery.data?.length,
+    chaptersQuery.error?.message,
+    chaptersQuery.fetchStatus,
+    chaptersQuery.status,
+  ]);
 
   useEffect(() => {
     setPendingBelowRule(null);

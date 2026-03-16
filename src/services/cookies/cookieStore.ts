@@ -9,6 +9,16 @@ import {
 
 const CF_CLEARANCE_COOKIE_NAME = "cf_clearance";
 
+export interface CfClearanceDebugState {
+  origin: string;
+  domain: string;
+  platform: "ios" | "android" | "other";
+  exists: boolean;
+  isValid: boolean;
+  isExpired?: boolean;
+  expiresAt?: string;
+}
+
 const parseUrl = (input: string) => {
   try {
     return new URL(input);
@@ -70,6 +80,47 @@ export const hasValidCfClearance = async (url: string): Promise<boolean> => {
   const cookieMap = await CookieManager.get(targetUrl);
   const cfCookie = cookieMap[CF_CLEARANCE_COOKIE_NAME];
   return Boolean(cfCookie?.value);
+};
+
+export const getCfClearanceDebugState = async (
+  url: string
+): Promise<CfClearanceDebugState> => {
+  const targetUrl = getOriginFromUrl(url);
+  const domain = getDomainFromUrl(url);
+  const platform =
+    Platform.OS === "ios"
+      ? "ios"
+      : Platform.OS === "android"
+        ? "android"
+        : "other";
+
+  if (Platform.OS === "ios") {
+    const validity = await isWebViewCfClearanceValid(targetUrl);
+
+    return {
+      origin: targetUrl,
+      domain,
+      platform,
+      exists: validity.exists,
+      isValid: validity.isValid,
+      isExpired: validity.isExpired,
+      expiresAt:
+        typeof validity.expiresDate === "number"
+          ? new Date(validity.expiresDate * 1000).toISOString()
+          : undefined,
+    };
+  }
+
+  const cookieMap = await CookieManager.get(targetUrl);
+  const cfCookie = cookieMap[CF_CLEARANCE_COOKIE_NAME];
+
+  return {
+    origin: targetUrl,
+    domain,
+    platform,
+    exists: Boolean(cfCookie?.value),
+    isValid: Boolean(cfCookie?.value),
+  };
 };
 
 export const clearCfClearance = async (url: string): Promise<void> => {

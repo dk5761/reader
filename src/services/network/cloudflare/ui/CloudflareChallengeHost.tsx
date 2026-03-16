@@ -13,6 +13,7 @@ import {
   solveCloudflareChallenge,
   syncWebViewCookies,
 } from "@/services/cookies";
+import { logReaderDiagnostic } from "@/services/diagnostics";
 
 interface SolveSession {
   id: string;
@@ -44,6 +45,13 @@ export const CloudflareChallengeHost = () => {
 
   const runAutoSolve = useCallback(
     async (request: CloudflareSolveRequest): Promise<CloudflareSolveResult> => {
+      logReaderDiagnostic("cloudflare-ui", "auto solve started", {
+        domain: request.domain,
+        url: request.url,
+        webViewUrl: request.webViewUrl,
+        platform: Platform.OS,
+      });
+
       if (Platform.OS === "ios") {
         try {
           const result = await solveCloudflareChallenge(
@@ -53,19 +61,40 @@ export const CloudflareChallengeHost = () => {
             request.autoTimeoutMs
           );
 
+          logReaderDiagnostic("cloudflare-ui", "native auto solve finished", {
+            domain: request.domain,
+            url: request.url,
+            result,
+          });
+
           if (result.success) {
             await syncWebViewCookies(request.url);
             const hasClearance = await hasValidCfClearance(request.url);
             if (hasClearance) {
+              logReaderDiagnostic("cloudflare-ui", "native auto solve succeeded", {
+                domain: request.domain,
+                url: request.url,
+              });
               return { success: true, mode: "auto" };
             }
           }
-        } catch {
+        } catch (error) {
+          logReaderDiagnostic("cloudflare-ui", "native auto solve failed", {
+            domain: request.domain,
+            url: request.url,
+            error,
+          });
           // Fall back to the React Native WebView path below.
         }
       }
 
       const session = createSession(request);
+      logReaderDiagnostic("cloudflare-ui", "webview auto solve session created", {
+        sessionId: session.id,
+        domain: request.domain,
+        url: request.url,
+        webViewUrl: request.webViewUrl,
+      });
       setAutoSession(session);
       await wait(350);
 
@@ -77,9 +106,20 @@ export const CloudflareChallengeHost = () => {
           const hasClearance = await hasValidCfClearance(request.url);
           if (hasClearance) {
             setAutoSession(null);
+            logReaderDiagnostic("cloudflare-ui", "webview auto solve succeeded", {
+              sessionId: session.id,
+              domain: request.domain,
+              url: request.url,
+            });
             return { success: true, mode: "auto" };
           }
-        } catch {
+        } catch (error) {
+          logReaderDiagnostic("cloudflare-ui", "webview auto solve poll error", {
+            sessionId: session.id,
+            domain: request.domain,
+            url: request.url,
+            error,
+          });
           // Ignore intermediate sync/check errors and continue polling.
         }
 
@@ -87,6 +127,11 @@ export const CloudflareChallengeHost = () => {
       }
 
       setAutoSession(null);
+      logReaderDiagnostic("cloudflare-ui", "webview auto solve timed out", {
+        sessionId: session.id,
+        domain: request.domain,
+        url: request.url,
+      });
       return { success: false, mode: "auto", reason: "auto_timeout" };
     },
     []
@@ -98,6 +143,12 @@ export const CloudflareChallengeHost = () => {
       manualDoneRef.current = false;
 
       const session = createSession(request);
+      logReaderDiagnostic("cloudflare-ui", "manual solve session created", {
+        sessionId: session.id,
+        domain: request.domain,
+        url: request.url,
+        webViewUrl: request.webViewUrl,
+      });
       setManualSession(session);
       await wait(350);
 
@@ -110,6 +161,11 @@ export const CloudflareChallengeHost = () => {
       while (Date.now() < deadline) {
         if (manualCancelRef.current) {
           setManualSession(null);
+          logReaderDiagnostic("cloudflare-ui", "manual solve cancelled", {
+            sessionId: session.id,
+            domain: request.domain,
+            url: request.url,
+          });
           return {
             success: false,
             mode: "manual",
@@ -122,9 +178,20 @@ export const CloudflareChallengeHost = () => {
           const hasClearance = await hasValidCfClearance(request.url);
           if (hasClearance) {
             setManualSession(null);
+            logReaderDiagnostic("cloudflare-ui", "manual solve succeeded", {
+              sessionId: session.id,
+              domain: request.domain,
+              url: request.url,
+            });
             return { success: true, mode: "manual" };
           }
-        } catch {
+        } catch (error) {
+          logReaderDiagnostic("cloudflare-ui", "manual solve poll error", {
+            sessionId: session.id,
+            domain: request.domain,
+            url: request.url,
+            error,
+          });
           // Keep polling until timeout or cancellation.
         }
 
@@ -135,6 +202,11 @@ export const CloudflareChallengeHost = () => {
       }
 
       setManualSession(null);
+      logReaderDiagnostic("cloudflare-ui", "manual solve timed out", {
+        sessionId: session.id,
+        domain: request.domain,
+        url: request.url,
+      });
       return { success: false, mode: "manual", reason: "manual_timeout" };
     },
     []
@@ -189,6 +261,11 @@ export const CloudflareChallengeHost = () => {
               thirdPartyCookiesEnabled
               userAgent={autoSession.userAgent}
               onLoadEnd={() => {
+                logReaderDiagnostic("cloudflare-ui", "auto webview load end", {
+                  sessionId: autoSession.id,
+                  url: autoSession.url,
+                  webViewUrl: autoSession.webViewUrl,
+                });
                 void syncWebViewCookies(autoSession.url);
               }}
             />
@@ -208,6 +285,10 @@ export const CloudflareChallengeHost = () => {
               <PressableScale
                 style={styles.headerButton}
                 onPress={() => {
+                  logReaderDiagnostic("cloudflare-ui", "manual solve done pressed", {
+                    sessionId: manualSession?.id ?? null,
+                    url: manualSession?.url ?? null,
+                  });
                   manualDoneRef.current = true;
                 }}
               >
@@ -216,6 +297,10 @@ export const CloudflareChallengeHost = () => {
               <PressableScale
                 style={styles.headerButton}
                 onPress={() => {
+                  logReaderDiagnostic("cloudflare-ui", "manual solve cancel pressed", {
+                    sessionId: manualSession?.id ?? null,
+                    url: manualSession?.url ?? null,
+                  });
                   manualCancelRef.current = true;
                 }}
               >
@@ -238,6 +323,11 @@ export const CloudflareChallengeHost = () => {
               thirdPartyCookiesEnabled
               userAgent={manualSession.userAgent}
               onLoadEnd={() => {
+                logReaderDiagnostic("cloudflare-ui", "manual webview load end", {
+                  sessionId: manualSession.id,
+                  url: manualSession.url,
+                  webViewUrl: manualSession.webViewUrl,
+                });
                 void syncWebViewCookies(manualSession.url);
                 manualDoneRef.current = true;
               }}
