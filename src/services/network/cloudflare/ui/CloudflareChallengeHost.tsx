@@ -21,19 +21,34 @@ interface SolveSession {
   webViewUrl: string;
   headers?: Record<string, string>;
   userAgent?: string;
+  presentation: "hidden" | "fullscreen";
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+const VISIBLE_AUTO_SOLVE_DOMAINS = new Set(["comix.to"]);
+
+const shouldUseVisibleAutoSolve = (domain: string) =>
+  VISIBLE_AUTO_SOLVE_DOMAINS.has(domain.trim().toLowerCase());
+
+const getAutoSolveTimeoutMs = (request: CloudflareSolveRequest) =>
+  shouldUseVisibleAutoSolve(request.domain)
+    ? Math.max(request.autoTimeoutMs, 20_000)
+    : request.autoTimeoutMs;
+
 const createSessionId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-const createSession = (request: CloudflareSolveRequest): SolveSession => ({
+const createSession = (
+  request: CloudflareSolveRequest,
+  presentation: SolveSession["presentation"] = "hidden"
+): SolveSession => ({
   id: createSessionId(),
   url: request.url,
   webViewUrl: request.webViewUrl,
   headers: request.headers,
   userAgent: request.userAgent,
+  presentation,
 });
 
 export const CloudflareChallengeHost = () => {
@@ -45,20 +60,25 @@ export const CloudflareChallengeHost = () => {
 
   const runAutoSolve = useCallback(
     async (request: CloudflareSolveRequest): Promise<CloudflareSolveResult> => {
+      const prefersVisibleAutoSolve = shouldUseVisibleAutoSolve(request.domain);
+      const autoTimeoutMs = getAutoSolveTimeoutMs(request);
+
       logReaderDiagnostic("cloudflare-ui", "auto solve started", {
         domain: request.domain,
         url: request.url,
         webViewUrl: request.webViewUrl,
         platform: Platform.OS,
+        prefersVisibleAutoSolve,
+        autoTimeoutMs,
       });
 
-      if (Platform.OS === "ios") {
+      if (Platform.OS === "ios" && !prefersVisibleAutoSolve) {
         try {
           const result = await solveCloudflareChallenge(
             request.webViewUrl,
             request.userAgent,
             request.headers ?? {},
-            request.autoTimeoutMs
+            autoTimeoutMs
           );
 
           logReaderDiagnostic("cloudflare-ui", "native auto solve finished", {
@@ -88,17 +108,21 @@ export const CloudflareChallengeHost = () => {
         }
       }
 
-      const session = createSession(request);
+      const session = createSession(
+        request,
+        prefersVisibleAutoSolve ? "fullscreen" : "hidden"
+      );
       logReaderDiagnostic("cloudflare-ui", "webview auto solve session created", {
         sessionId: session.id,
         domain: request.domain,
         url: request.url,
         webViewUrl: request.webViewUrl,
+        presentation: session.presentation,
       });
       setAutoSession(session);
       await wait(350);
 
-      const deadline = Date.now() + request.autoTimeoutMs;
+      const deadline = Date.now() + autoTimeoutMs;
 
       while (Date.now() < deadline) {
         try {
@@ -131,6 +155,8 @@ export const CloudflareChallengeHost = () => {
         sessionId: session.id,
         domain: request.domain,
         url: request.url,
+        presentation: session.presentation,
+        autoTimeoutMs,
       });
       return { success: false, mode: "auto", reason: "auto_timeout" };
     },
@@ -241,13 +267,13 @@ export const CloudflareChallengeHost = () => {
   return (
     <>
       <Modal
-        visible={Boolean(autoSession)}
+        visible={Boolean(autoSession) && autoSession?.presentation === "hidden"}
         animationType="none"
         transparent
         presentationStyle="overFullScreen"
       >
         <View pointerEvents="none" style={styles.autoModalRoot}>
-          {autoSession ? (
+          {autoSession?.presentation === "hidden" ? (
             <WebView
               key={autoSession.id}
               source={{
@@ -271,6 +297,43 @@ export const CloudflareChallengeHost = () => {
             />
           ) : null}
         </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(autoSession) && autoSession?.presentation === "fullscreen"}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <SafeAreaView style={styles.modalRoot}>
+          <View style={styles.headerRow}>
+            <Text style={styles.headerTitle}>Verifying site access…</Text>
+          </View>
+
+          {autoSession?.presentation === "fullscreen" ? (
+            <WebView
+              key={autoSession.id}
+              source={{
+                uri: autoSession.webViewUrl,
+                headers: autoSession.headers,
+              }}
+              style={styles.manualWebView}
+              javaScriptEnabled
+              domStorageEnabled
+              sharedCookiesEnabled
+              thirdPartyCookiesEnabled
+              userAgent={autoSession.userAgent}
+              onLoadEnd={() => {
+                logReaderDiagnostic("cloudflare-ui", "auto webview load end", {
+                  sessionId: autoSession.id,
+                  url: autoSession.url,
+                  webViewUrl: autoSession.webViewUrl,
+                  presentation: autoSession.presentation,
+                });
+                void syncWebViewCookies(autoSession.url);
+              }}
+            />
+          ) : null}
+        </SafeAreaView>
       </Modal>
 
       <Modal

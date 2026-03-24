@@ -4,7 +4,6 @@ import {
   clearCfClearance,
   getCfClearanceDebugState,
   getCookieHeaderForUrl,
-  getOriginFromUrl,
   getDomainFromUrl,
   hasValidCfClearance,
 } from "@/services/cookies";
@@ -37,6 +36,8 @@ const UNSAFE_WEBVIEW_REQUEST_HEADERS = new Set([
   "content-length",
   "content-type",
   "host",
+  "origin",
+  "referer",
   "trailer",
   "te",
   "upgrade",
@@ -128,7 +129,7 @@ const resolveWebViewUrl = (absoluteUrl: string): string => {
   try {
     const parsedUrl = new URL(absoluteUrl);
     if (parsedUrl.pathname.startsWith("/api/")) {
-      return getOriginFromUrl(absoluteUrl);
+      return new URL("/", absoluteUrl).toString();
     }
 
     return absoluteUrl;
