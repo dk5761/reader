@@ -87,6 +87,7 @@ export default function MangaDetailsScreen() {
   const [chaptersPage, setChaptersPage] = useState(1);
   const [sectionABottomOffset, setSectionABottomOffset] = useState(0);
   const [isSectionAVisible, setIsSectionAVisible] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const headerExpandProgress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -342,6 +343,27 @@ export default function MangaDetailsScreen() {
     void queryClient.cancelQueries({ queryKey: chaptersQueryKey });
     router.back();
   };
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        detailsQuery.refetch(),
+        chaptersQuery.refetch(),
+        libraryEntryQuery.refetch(),
+        latestProgressQuery.refetch(),
+        mangaProgressQuery.refetch(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [
+    detailsQuery,
+    chaptersQuery,
+    libraryEntryQuery,
+    latestProgressQuery,
+    mangaProgressQuery,
+  ]);
 
   if (!source || !sourceId || !mangaId) {
     return (
@@ -678,6 +700,8 @@ export default function MangaDetailsScreen() {
           }
         }}
         scrollEventThrottle={16}
+        refreshing={isRefreshing}
+        onRefresh={handleRefresh}
         ListHeaderComponent={
           <View className="pb-4 pt-3">
             <View

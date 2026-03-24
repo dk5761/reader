@@ -154,6 +154,7 @@ export default function SourceMangaListScreen() {
   const [statusFilter, setStatusFilter] = useState<"all" | "ongoing" | "completed">(
     "all"
   );
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const screenInstanceIdRef = useRef(
     `browse-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   );
@@ -412,6 +413,16 @@ export default function SourceMangaListScreen() {
       },
     });
   }, [debugLog, debouncedQuery, mode, releaseNavigationLock, routeSourceId, router, statusFilter]);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await mangaQuery.refetch();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [mangaQuery]);
+
   const libraryMembershipSet = useMemo(
     () =>
       new Set(
@@ -554,6 +565,8 @@ export default function SourceMangaListScreen() {
                 void mangaQuery.fetchNextPage();
               }
             }}
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
             ListFooterComponent={
               mangaQuery.isFetchingNextPage ? (
                 <View className="items-center py-4">
