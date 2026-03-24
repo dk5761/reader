@@ -21,34 +21,19 @@ interface SolveSession {
   webViewUrl: string;
   headers?: Record<string, string>;
   userAgent?: string;
-  presentation: "hidden" | "fullscreen";
 }
 
 const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-const VISIBLE_AUTO_SOLVE_DOMAINS = new Set(["comix.to"]);
-
-const shouldUseVisibleAutoSolve = (domain: string) =>
-  VISIBLE_AUTO_SOLVE_DOMAINS.has(domain.trim().toLowerCase());
-
-const getAutoSolveTimeoutMs = (request: CloudflareSolveRequest) =>
-  shouldUseVisibleAutoSolve(request.domain)
-    ? Math.max(request.autoTimeoutMs, 20_000)
-    : request.autoTimeoutMs;
-
 const createSessionId = () =>
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
-const createSession = (
-  request: CloudflareSolveRequest,
-  presentation: SolveSession["presentation"] = "hidden"
-): SolveSession => ({
+const createSession = (request: CloudflareSolveRequest): SolveSession => ({
   id: createSessionId(),
   url: request.url,
   webViewUrl: request.webViewUrl,
   headers: request.headers,
   userAgent: request.userAgent,
-  presentation,
 });
 
 export const CloudflareChallengeHost = () => {
@@ -60,36 +45,34 @@ export const CloudflareChallengeHost = () => {
 
   const runAutoSolve = useCallback(
     async (request: CloudflareSolveRequest): Promise<CloudflareSolveResult> => {
-      const prefersVisibleAutoSolve = shouldUseVisibleAutoSolve(request.domain);
-      const autoTimeoutMs = getAutoSolveTimeoutMs(request);
-
       logReaderDiagnostic("cloudflare-ui", "auto solve started", {
         domain: request.domain,
         url: request.url,
         webViewUrl: request.webViewUrl,
-        platform: Platform.OS,
-        prefersVisibleAutoSolve,
-        autoTimeoutMs,
+        mode: Platform.OS === "ios" ? "native_offscreen" : "hidden_webview",
+        autoTimeoutMs: request.autoTimeoutMs,
       });
 
-      if (Platform.OS === "ios" && !prefersVisibleAutoSolve) {
+      if (Platform.OS === "ios") {
         try {
           const result = await solveCloudflareChallenge(
             request.webViewUrl,
             request.userAgent,
             request.headers ?? {},
-            autoTimeoutMs
+            request.autoTimeoutMs
           );
 
           logReaderDiagnostic("cloudflare-ui", "native auto solve finished", {
             domain: request.domain,
             url: request.url,
+            webViewUrl: request.webViewUrl,
             result,
           });
 
           if (result.success) {
             await syncWebViewCookies(request.url);
             const hasClearance = await hasValidCfClearance(request.url);
+
             if (hasClearance) {
               logReaderDiagnostic("cloudflare-ui", "native auto solve succeeded", {
                 domain: request.domain,
@@ -102,27 +85,25 @@ export const CloudflareChallengeHost = () => {
           logReaderDiagnostic("cloudflare-ui", "native auto solve failed", {
             domain: request.domain,
             url: request.url,
+            webViewUrl: request.webViewUrl,
             error,
           });
-          // Fall back to the React Native WebView path below.
         }
+
+        return { success: false, mode: "auto", reason: "auto_timeout" };
       }
 
-      const session = createSession(
-        request,
-        prefersVisibleAutoSolve ? "fullscreen" : "hidden"
-      );
+      const session = createSession(request);
       logReaderDiagnostic("cloudflare-ui", "webview auto solve session created", {
         sessionId: session.id,
         domain: request.domain,
         url: request.url,
         webViewUrl: request.webViewUrl,
-        presentation: session.presentation,
       });
       setAutoSession(session);
       await wait(350);
 
-      const deadline = Date.now() + autoTimeoutMs;
+      const deadline = Date.now() + request.autoTimeoutMs;
 
       while (Date.now() < deadline) {
         try {
@@ -155,8 +136,7 @@ export const CloudflareChallengeHost = () => {
         sessionId: session.id,
         domain: request.domain,
         url: request.url,
-        presentation: session.presentation,
-        autoTimeoutMs,
+        autoTimeoutMs: request.autoTimeoutMs,
       });
       return { success: false, mode: "auto", reason: "auto_timeout" };
     },
@@ -266,75 +246,30 @@ export const CloudflareChallengeHost = () => {
 
   return (
     <>
-      <Modal
-        visible={Boolean(autoSession) && autoSession?.presentation === "hidden"}
-        animationType="none"
-        transparent
-        presentationStyle="overFullScreen"
-      >
-        <View pointerEvents="none" style={styles.autoModalRoot}>
-          {autoSession?.presentation === "hidden" ? (
-            <WebView
-              key={autoSession.id}
-              source={{
-                uri: autoSession.webViewUrl,
-                headers: autoSession.headers,
-              }}
-              style={styles.hiddenWebView}
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              userAgent={autoSession.userAgent}
-              onLoadEnd={() => {
-                logReaderDiagnostic("cloudflare-ui", "auto webview load end", {
-                  sessionId: autoSession.id,
-                  url: autoSession.url,
-                  webViewUrl: autoSession.webViewUrl,
-                });
-                void syncWebViewCookies(autoSession.url);
-              }}
-            />
-          ) : null}
-        </View>
-      </Modal>
-
-      <Modal
-        visible={Boolean(autoSession) && autoSession?.presentation === "fullscreen"}
-        animationType="slide"
-        presentationStyle="fullScreen"
-      >
-        <SafeAreaView style={styles.modalRoot}>
-          <View style={styles.headerRow}>
-            <Text style={styles.headerTitle}>Verifying site access…</Text>
-          </View>
-
-          {autoSession?.presentation === "fullscreen" ? (
-            <WebView
-              key={autoSession.id}
-              source={{
-                uri: autoSession.webViewUrl,
-                headers: autoSession.headers,
-              }}
-              style={styles.manualWebView}
-              javaScriptEnabled
-              domStorageEnabled
-              sharedCookiesEnabled
-              thirdPartyCookiesEnabled
-              userAgent={autoSession.userAgent}
-              onLoadEnd={() => {
-                logReaderDiagnostic("cloudflare-ui", "auto webview load end", {
-                  sessionId: autoSession.id,
-                  url: autoSession.url,
-                  webViewUrl: autoSession.webViewUrl,
-                  presentation: autoSession.presentation,
-                });
-                void syncWebViewCookies(autoSession.url);
-              }}
-            />
-          ) : null}
-        </SafeAreaView>
-      </Modal>
+      {autoSession ? (
+        <WebView
+          key={autoSession.id}
+          source={{
+            uri: autoSession.webViewUrl,
+            headers: autoSession.headers,
+          }}
+          pointerEvents="none"
+          style={styles.hiddenWebView}
+          javaScriptEnabled
+          domStorageEnabled
+          sharedCookiesEnabled
+          thirdPartyCookiesEnabled
+          userAgent={autoSession.userAgent}
+          onLoadEnd={() => {
+            logReaderDiagnostic("cloudflare-ui", "auto webview load end", {
+              sessionId: autoSession.id,
+              url: autoSession.url,
+              webViewUrl: autoSession.webViewUrl,
+            });
+            void syncWebViewCookies(autoSession.url);
+          }}
+        />
+      ) : null}
 
       <Modal
         visible={Boolean(manualSession)}
@@ -403,10 +338,6 @@ export const CloudflareChallengeHost = () => {
 };
 
 const styles = StyleSheet.create({
-  autoModalRoot: {
-    flex: 1,
-    backgroundColor: "transparent",
-  },
   hiddenWebView: {
     position: "absolute",
     top: -10000,
@@ -414,6 +345,7 @@ const styles = StyleSheet.create({
     width: 1,
     height: 1,
     opacity: 0,
+    backgroundColor: "transparent",
   },
   modalRoot: {
     flex: 1,

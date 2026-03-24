@@ -4,8 +4,8 @@ import {
   clearCfClearance,
   getCfClearanceDebugState,
   getCookieHeaderForUrl,
-  getDomainFromUrl,
   hasValidCfClearance,
+  getDomainFromUrl,
 } from "@/services/cookies";
 import { logReaderDiagnostic } from "@/services/diagnostics";
 import {
@@ -36,8 +36,6 @@ const UNSAFE_WEBVIEW_REQUEST_HEADERS = new Set([
   "content-length",
   "content-type",
   "host",
-  "origin",
-  "referer",
   "trailer",
   "te",
   "upgrade",
@@ -126,16 +124,7 @@ const createRetryContext = (
 };
 
 const resolveWebViewUrl = (absoluteUrl: string): string => {
-  try {
-    const parsedUrl = new URL(absoluteUrl);
-    if (parsedUrl.pathname.startsWith("/api/")) {
-      return new URL("/", absoluteUrl).toString();
-    }
-
-    return absoluteUrl;
-  } catch {
-    return absoluteUrl;
-  }
+  return absoluteUrl;
 };
 
 export const attachCookiesToRequest = async (
@@ -201,7 +190,7 @@ export const solveCloudflareAndRetry = async (
         domain: context.domain,
         headers,
         userAgent,
-        allowManualFallback: true,
+        allowManualFallback: false,
         autoTimeoutMs: CF_AUTO_SOLVE_TIMEOUT_MS,
         manualTimeoutMs: CF_MANUAL_SOLVE_TIMEOUT_MS,
       });
